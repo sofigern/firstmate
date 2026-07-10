@@ -206,6 +206,7 @@ Captain preferences go to `data/captain.md`, fleet-local operational facts and g
 Memory writes use inspect-then-update: read the current destination first, then rewrite or prune matching bullets or notes in place instead of appending by default.
 Task-scoped notes use `tasks-axi show <id> --full` followed by `tasks-axi update <id> --body-file <path>`, adding `--archive-body` when the prior body should remain recoverable.
 Generalizable firstmate knowledge goes to shared tracked docs through the normal PR pipeline; the firstmate-internal `/stow` deliberately never stores findings in either skill directory.
+`/drydock` is `/stow`'s heavier periodic counterpart: roughly weekly, it consolidates what those captures piled up in `data/learnings.md` down to essential rules, graduates recurring procedures into skills or docs by scope, interviews the captain on which projects to continue, and prunes stale per-task and disk artifacts, staging a backup and confirming every destructive step with the captain first.
 
 ## Local clones stay fresh
 
