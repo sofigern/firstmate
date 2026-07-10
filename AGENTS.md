@@ -423,6 +423,8 @@ Route each piece of durable knowledge to its most specific home:
 
 When the captain invokes `/stow`, load the `stow` skill.
 It sweeps the current session for uncaptured durable knowledge, routes findings with this table, files undone next steps to the backlog, and reports whether the session is safe to reset.
+When the captain invokes `/drydock` or asks for the weekly compaction, load the `drydock` skill.
+It is `/stow`'s heavier periodic counterpart: it consolidates accumulated knowledge to essential rules, graduates recurring procedures, interviews the captain on project continuation, and prunes stale files and disk, with every destructive step proposed and captain-confirmed first.
 
 **Delivery mode (choose at add).** `<mode>` is how a finished change reaches `main`, picked per project when you add it and recorded in the registry line (`fm-project-mode.sh` parses it; `fm-spawn` records it into each task's meta):
 
