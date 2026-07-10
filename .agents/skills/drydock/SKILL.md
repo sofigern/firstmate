@@ -68,9 +68,10 @@ Use lavish-axi's input playbook when the list is long.
 For each captain-confirmed drop:
 
 1. Check the clone for unlanded work first - dirty files or local branches not reachable from any remote - and surface anything found before proceeding; the captain must explicitly discard it.
-2. Remove the clone under `projects/`, sanctioned solely by the captain's explicit drop order.
-3. Drop its `data/projects.md` registry line, forget its learnings and loose docs, and close or delete its queued backlog items.
-4. If a secondmate exists solely for that scope, propose retiring it; the retirement itself follows the normal secondmate teardown path (load `secondmate-provisioning`), never an ad-hoc delete.
+2. Drop its `data/projects.md` registry line - that file is firstmate's own, so this is a normal write, never a state-changing command under `projects/`.
+3. Present the exact removal command (for example `rm -rf projects/<name>`) for the captain to run themselves to reclaim the clone's disk; firstmate never runs a state-changing command under `projects/`, so it does not delete the clone itself.
+4. Forget its learnings and loose docs, and close or delete its queued backlog items.
+5. If a secondmate exists solely for that scope, propose retiring it; the retirement itself follows the normal secondmate teardown path (load `secondmate-provisioning`), never an ad-hoc delete.
 
 Paused projects keep their registry line (marked paused) but their knowledge compacts to essentials like everything else.
 
@@ -84,7 +85,7 @@ Propose, confirm, then delete:
 - Dated artifacts that have served their purpose: old `data/status-report-*.md` files, stale `.lavish/` artifacts, previous drydock backups.
 - Anything else large and redundant the survey turned up, judged case by case.
 
-The target is a home comfortably under 1GB; the usual offenders are dropped project clones (phase 3) and accumulated task dirs.
+The target is a home comfortably under 1GB; the captain's removal of dropped project clones (phase 3) is the usual biggest reclaim, alongside accumulated task dirs.
 
 ## Phase 5 - apply the rewrites
 
