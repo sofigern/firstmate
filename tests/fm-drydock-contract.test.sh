@@ -24,7 +24,9 @@ test_drydock_skill_safety_contract() {
 test_drydock_trigger_declared_inline() {
   local agents="$ROOT/AGENTS.md"
 
+  # shellcheck disable=SC2016  # single quotes are deliberate: literal backtick-quoted text, not an expansion
   assert_grep 'When the captain invokes `/drydock` or asks for the weekly compaction, load the `drydock` skill.' "$agents" "AGENTS.md does not declare the drydock load trigger"
+  # shellcheck disable=SC2016  # single quotes are deliberate: literal backtick-quoted text, not an expansion
   assert_grep '`/drydock`' "$ROOT/README.md" "README does not list /drydock among built-in skills"
   pass "drydock trigger is declared inline in AGENTS.md and README"
 }
