@@ -239,6 +239,11 @@ secondmate_registry_field() {
   case "$key" in
     home) value=$(printf '%s\n' "$line" | sed -n 's/.*(home:[[:space:]]*\([^;)]*\);.*/\1/p' | sed 's/[[:space:]]*$//') ;;
     projects) value=$(printf '%s\n' "$line" | sed -n 's/.*; projects:[[:space:]]*\([^;)]*\); added .*/\1/p' | sed 's/[[:space:]]*$//') ;;
+    # model:/status: are the optional lieutenant flavor fields, appended after
+    # "added <date>" so the home/projects parsers above are unaffected; absent on
+    # plain secondmate lines (secondmate-provisioning "Lieutenant flavor").
+    model) value=$(printf '%s\n' "$line" | sed -n 's/.*; model:[[:space:]]*\([^;)]*\).*/\1/p' | sed 's/[[:space:]]*$//') ;;
+    status) value=$(printf '%s\n' "$line" | sed -n 's/.*; status:[[:space:]]*\([^;)]*\).*/\1/p' | sed 's/[[:space:]]*$//') ;;
     *) return 1 ;;
   esac
   [ -n "$value" ] || return 1

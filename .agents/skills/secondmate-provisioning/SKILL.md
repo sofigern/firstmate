@@ -1,9 +1,9 @@
 ---
 name: secondmate-provisioning
 description: >-
-  Agent-only reference for persistent secondmate setup and retirement.
-  Use when creating, seeding, validating, launching, recovering, handing backlog to, pushing inherited config into, or retiring a secondmate home, or when editing data/secondmates.md.
-  Covers home leases, transactional seeding, project clone restrictions, secondmate harness pins, inherited config push, idle charter, handoff helper, and teardown safety.
+  Agent-only reference for secondmate and lieutenant setup and retirement.
+  Use when creating, seeding, validating, launching, recovering, handing backlog to, pushing inherited config into, or retiring a secondmate or lieutenant home, or when editing data/secondmates.md.
+  Covers home leases, transactional seeding, project clone restrictions, secondmate harness pins, the per-mission lieutenant flavor, inherited config push, idle charter, handoff helper, and teardown safety.
 user-invocable: false
 metadata:
   internal: true
@@ -25,6 +25,15 @@ Keep the always-inline routing rules in `AGENTS.md` authoritative: route by natu
 
 The `scope:` field is used during intake.
 The `projects:` field is a non-exclusive clone list, not ownership.
+
+A lieutenant line (see "Lieutenant flavor") appends two optional fields after `added <date>`, inside the trailing `)`:
+
+```markdown
+- <id> - <mission summary> (home: <path>; scope: <scope>; projects: <p...>; added <date>; model: opus|fable|...; status: active|idle|done)
+```
+
+The fields are additive and backward-compatible: they are absent on plain secondmate lines, and appending them never disturbs the `home:`/`scope:`/`projects:`/`added` parsers, which anchor on their own labels.
+`secondmate_registry_field <registry> <id> model|status` (`bin/fm-ff-lib.sh`) reads them back, returning empty when absent.
 
 ## Charter and seed
 
@@ -93,6 +102,39 @@ If validation, cloning, no-mistakes initialization, or registry update fails, ge
 Secondmate project lists may include `no-mistakes` and `direct-PR` projects only.
 `local-only` projects stay with the main firstmate.
 For `no-mistakes` projects, seeding initializes only projects newly cloned into a secondmate home and refuses to mutate a preexisting clone that is not already initialized.
+
+## Lieutenant flavor
+
+A lieutenant is the per-mission flavor of this same mechanism: one mechanism, two flavors.
+A plain secondmate is a persistent domain supervisor; a lieutenant is scoped to one bounded mission that it plans, drives to completion, then stands down from.
+It shares the entire secondmate lifecycle unchanged - isolated firstmate home, home lease, charter, marked from-firstmate requests, escalation to the main status file, watcher, sync, inheritable config, recovery, and teardown - so every consumer that keys on `kind=secondmate` treats a lieutenant as a secondmate with zero changes.
+`bin/fm-spawn.sh --lieutenant` records `kind=secondmate` for exactly this reason; the flavor is carried by three additive deltas only.
+
+Scaffold the mission charter with:
+
+```sh
+bin/fm-brief.sh <id> --lieutenant {<project>...|--no-projects}
+```
+
+It takes the same `FM_SECONDMATE_CHARTER`/`FM_SECONDMATE_SCOPE` inputs, the same project list or `--no-projects`, and the same `--herdr-lab` rejection as the secondmate charter.
+Only the charter body differs: the intro names the lieutenant role, the operating model frames a single bounded mission to plan and decompose, and the definition of done is auto-idle-then-retire-on-mission-complete rather than the secondmate's persistent-idle.
+The lieutenant carries the mission to completion, appends `done: <mission outcome>` to the main status file, then idles awaiting a follow-up or retirement; it never tears itself down, and the main firstmate retires it on mission completion.
+
+Launch it with:
+
+```sh
+bin/fm-spawn.sh <id> --lieutenant
+```
+
+The three additive deltas, all gated on the lieutenant flavor and nothing else:
+
+- `--model` defaults to `opus` (Fable on request via an explicit `--model fable`); an explicit `--model` still wins.
+  This overrides the `config/secondmate-harness` model pin, which is the persistent secondmate's knob, not a per-mission lieutenant's; the harness axis still resolves through the secondmate path.
+- Meta gains a `flavor=lieutenant` line alongside the usual `kind=secondmate`, `home=`, and `projects=`.
+  A plain secondmate has no `flavor=` line, keeping its meta byte-identical.
+- The routing-table line gains the `model:`/`status:` fields above, stamped idempotently onto the line `bin/fm-home-seed.sh` created (any prior `model:`/`status:` is replaced, so a respawn never duplicates them).
+
+Seed a lieutenant home exactly like a secondmate home with `bin/fm-home-seed.sh`; the flavor is applied at spawn, not at seed.
 
 ## Backlog handoff
 

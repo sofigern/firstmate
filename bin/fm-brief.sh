@@ -8,6 +8,7 @@
 # of shipping a new one).
 # Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+#        fm-brief.sh <task-id> --lieutenant {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --secondmate writes a persistent secondmate charter. The project list
@@ -15,6 +16,14 @@
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
 #   captain-relevant escalations and marked from-firstmate replies append to this
 #   home's status file.
+#   --lieutenant writes the per-mission flavor of that same charter. It shares the
+#   secondmate mechanism (isolated firstmate home, marked from-firstmate requests,
+#   escalation to the main status file) but its definition of done is
+#   auto-idle-then-retire-on-mission-complete instead of persistent-idle: it plans
+#   and drives one bounded mission, reports done up, then idles awaiting a follow-up
+#   or retirement rather than living on as a standing domain. The registry model:
+#   and status: fields and the meta flavor= are stamped at spawn (bin/fm-spawn.sh),
+#   not here.
 #   --no-projects writes a project-less charter for a domain whose subject is the
 #   firstmate repo itself (its home is a firstmate worktree, its crews take pooled
 #   worktrees of the same repo). It is mutually exclusive with a project list, and
@@ -78,6 +87,7 @@ for a in "$@"; do
   case "$a" in
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
+    --lieutenant) KIND=lieutenant ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     *) POS+=("$a") ;;
@@ -85,13 +95,18 @@ for a in "$@"; do
 done
 ID=${POS[0]}
 
-if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
+# A charter kind is a home agent: the persistent secondmate or the per-mission
+# lieutenant. Both take the same positional project list and share the charter
+# scaffold; only the intro, operating model, and definition of done differ.
+is_charter_kind() { [ "$KIND" = secondmate ] || [ "$KIND" = lieutenant ]; }
+
+if is_charter_kind && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
   exit 1
 fi
 
-if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
-  echo "error: --no-projects applies only to --secondmate charters" >&2
+if [ "$NO_PROJECTS" -eq 1 ] && ! is_charter_kind; then
+  echo "error: --no-projects applies only to --secondmate or --lieutenant charters" >&2
   exit 1
 fi
 
@@ -107,7 +122,20 @@ shell_quote() {
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
 
-if [ "$KIND" = secondmate ]; then
+if is_charter_kind; then
+# A lieutenant is the per-mission flavor of the secondmate mechanism; both share
+# this scaffold. Only three pieces differ: the intro line, the operating-model
+# body, and the definition of done. ROLE_LABEL/SUBJECT_NOUN keep the secondmate
+# wording byte-identical (label "secondmate", noun "domain") while giving the
+# lieutenant its mission wording. FLAG names the flag in error messages.
+if [ "$KIND" = lieutenant ]; then
+  ROLE_LABEL="lieutenant"
+  SUBJECT_NOUN="mission"
+else
+  ROLE_LABEL="secondmate"
+  SUBJECT_NOUN="domain"
+fi
+FLAG="--$KIND"
 SECONDMATE_PROJECTS=""
 idx=1
 while [ "$idx" -lt "${#POS[@]}" ]; do
@@ -117,19 +145,66 @@ done
 if [ "$NO_PROJECTS" -eq 1 ]; then
   [ -z "$SECONDMATE_PROJECTS" ] || { echo "error: --no-projects cannot be combined with a project list" >&2; exit 1; }
 else
-  [ -n "$SECONDMATE_PROJECTS" ] || { echo "error: --secondmate requires at least one project, or --no-projects for a project-less home" >&2; exit 1; }
+  [ -n "$SECONDMATE_PROJECTS" ] || { echo "error: $FLAG requires at least one project, or --no-projects for a project-less home" >&2; exit 1; }
 fi
 SECONDMATE_CHARTER=${FM_SECONDMATE_CHARTER:-"{TASK}"}
 SECONDMATE_SCOPE=${FM_SECONDMATE_SCOPE:-${FM_SECONDMATE_CHARTER:-"{TASK}"}}
 if [ "$NO_PROJECTS" -eq 1 ]; then
-  PROJECT_CLONES_BODY="None. This is a project-less domain: its subject is the firstmate repo this home lives in, so it needs no separate clones under \`projects/\`; its crews take pooled worktrees of that firstmate repo."
-  PROJECT_CLONES_NOTE="This domain has no separate project clones: its subject is the firstmate repo this home lives in, and its crews take pooled worktrees of that repo."
+  PROJECT_CLONES_BODY="None. This is a project-less $SUBJECT_NOUN: its subject is the firstmate repo this home lives in, so it needs no separate clones under \`projects/\`; its crews take pooled worktrees of that firstmate repo."
+  PROJECT_CLONES_NOTE="This $SUBJECT_NOUN has no separate project clones: its subject is the firstmate repo this home lives in, and its crews take pooled worktrees of that repo."
 else
   PROJECT_CLONES_BODY=$(printf '%s\n' "$SECONDMATE_PROJECTS" | tr ' ' '\n' | sed 's/^/- /')
   PROJECT_CLONES_NOTE="The projects above are local clones for work you supervise; they are not an exclusive ownership claim."
 fi
+
+# The three flavor-specific pieces. Backticks are escaped so they reach the brief
+# literally; keep these bodies apostrophe-free (issue #166: an apostrophe inside a
+# $(cat <<EOF ...) body breaks bash -n on the whole script).
+if [ "$KIND" = lieutenant ]; then
+  INTRO="You are a lieutenant: a per-mission supervisor managed by the main firstmate. Work on your own; do not wait for a human."
+  OPERATING_MODEL_BODY=$(cat <<EOF
+You are in an isolated firstmate home. The local \`AGENTS.md\` is your job description, and your local \`data/\`, \`state/\`, \`config/\`, and \`projects/\` dirs are yours to operate.
+$PROJECT_CLONES_NOTE
+This is a single bounded mission. Plan it: decompose the mission into concrete units of work and drive each to completion.
+Delegate project work to your own crewmates with the normal firstmate lifecycle: brief, spawn, status, watcher, steer, teardown, and recovery.
+Do not invent a second delegation system.
+Act only within the scope of this mission; never start unrelated surveys, audits, or "find improvements" sweeps on your own initiative.
+EOF
+)
+  DOD_BODY=$(cat <<EOF
+You are a per-mission supervisor: carry this mission to completion, then stand down.
+On startup and restart, run normal firstmate bootstrap and recovery through \`bin/fm-session-start.sh\` for your own home, but only to RECONCILE work that is already yours: in-flight crewmates, tracked backlog items, and durable watches recorded in this home.
+Drive the mission through the normal firstmate lifecycle until the acceptance criteria in your Charter are met, escalating captain-relevant milestones up the status file as you go.
+When the mission is complete, append \`done: {one-line mission outcome}\` to the main status file, then go idle and wait silently.
+Do not invent follow-on work: an empty queue after completion means the mission is done, not that you should find more; wait for the main firstmate to route a follow-up or to retire you.
+The main firstmate retires you when the mission is complete with no expected follow-up; you never tear yourself down.
+If this mission cannot be carried out, append \`blocked: {why}\` or \`failed: {why}\` to the main status file and stop.
+EOF
+)
+else
+  INTRO="You are a secondmate: a persistent domain supervisor managed by the main firstmate. Work on your own; do not wait for a human."
+  OPERATING_MODEL_BODY=$(cat <<EOF
+You are in an isolated firstmate home. The local \`AGENTS.md\` is your job description, and your local \`data/\`, \`state/\`, \`config/\`, and \`projects/\` dirs are yours to operate.
+$PROJECT_CLONES_NOTE
+Delegate project work to your own crewmates with the normal firstmate lifecycle: brief, spawn, status, watcher, steer, teardown, and recovery.
+Do not invent a second delegation system.
+You do not generate your own work.
+Act only on tasks the main firstmate routes to you.
+Never start a survey, audit, or "find improvements" sweep on your own initiative; that is not your job and it is unwanted.
+EOF
+)
+  DOD_BODY=$(cat <<EOF
+You are persistent by default. Do not exit just because your queue is empty.
+On startup and restart, run normal firstmate bootstrap and recovery through \`bin/fm-session-start.sh\` for your own home, but only to RECONCILE work that is already yours: in-flight crewmates, tracked backlog items, and durable watches recorded in this home.
+When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main firstmate to route you a task.
+An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
+If this charter cannot be carried out, append \`blocked: {why}\` or \`failed: {why}\` to the main status file and stop.
+EOF
+)
+fi
+
 cat > "$BRIEF" <<EOF
-You are a secondmate: a persistent domain supervisor managed by the main firstmate. Work on your own; do not wait for a human.
+$INTRO
 
 # Charter
 $SECONDMATE_CHARTER
@@ -141,13 +216,7 @@ $SECONDMATE_SCOPE
 $PROJECT_CLONES_BODY
 
 # Operating model
-You are in an isolated firstmate home. The local \`AGENTS.md\` is your job description, and your local \`data/\`, \`state/\`, \`config/\`, and \`projects/\` dirs are yours to operate.
-$PROJECT_CLONES_NOTE
-Delegate project work to your own crewmates with the normal firstmate lifecycle: brief, spawn, status, watcher, steer, teardown, and recovery.
-Do not invent a second delegation system.
-You do not generate your own work.
-Act only on tasks the main firstmate routes to you.
-Never start a survey, audit, or "find improvements" sweep on your own initiative; that is not your job and it is unwanted.
+$OPERATING_MODEL_BODY
 
 # Requests from the main firstmate
 You are a firstmate in your own home, so an incoming message reaches you in your own chat.
@@ -163,23 +232,19 @@ Handle routine work yourself.
 Report only true captain-relevant outcomes or a declared external wait by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
-Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own; use \`blocked:\` when you are stuck and need firstmate to act.
+Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your $SUBJECT_NOUN is deliberately idling on a known external wait you expect to clear on its own; use \`blocked:\` when you are stuck and need firstmate to act.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, or work ready for review.
 This is also how you return the answer to a marked from-firstmate request above.
-When a decision you escalated is answered or a blocker clears and your domain resumes, append \`resolved: {how it was decided or unblocked}\` (keyed with \`[key=<slug>]\` if you opened it with one) so it is durably closed instead of resurfacing behind later unrelated events.
+When a decision you escalated is answered or a blocker clears and your $SUBJECT_NOUN resumes, append \`resolved: {how it was decided or unblocked}\` (keyed with \`[key=<slug>]\` if you opened it with one) so it is durably closed instead of resurfacing behind later unrelated events.
 Routine internal supervision, heartbeats, retries, and crewmate churn stay inside your own home and must not touch that status file.
 
 # Definition of done
-You are persistent by default. Do not exit just because your queue is empty.
-On startup and restart, run normal firstmate bootstrap and recovery through \`bin/fm-session-start.sh\` for your own home, but only to RECONCILE work that is already yours: in-flight crewmates, tracked backlog items, and durable watches recorded in this home.
-When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main firstmate to route you a task.
-An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
-If this charter cannot be carried out, append \`blocked: {why}\` or \`failed: {why}\` to the main status file and stop.
+$DOD_BODY
 EOF
 if [ "$SECONDMATE_CHARTER" = "{TASK}" ]; then
-  echo "scaffolded: $BRIEF (secondmate charter; replace {TASK})"
+  echo "scaffolded: $BRIEF ($ROLE_LABEL charter; replace {TASK})"
 else
-  echo "scaffolded: $BRIEF (secondmate charter)"
+  echo "scaffolded: $BRIEF ($ROLE_LABEL charter)"
 fi
 exit 0
 fi

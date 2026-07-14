@@ -3,6 +3,7 @@
 # secondmate in its isolated firstmate home.
 # Usage: fm-spawn.sh <task-id> <project-dir> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--scout]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
+#        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --lieutenant
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
 #   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
@@ -53,6 +54,14 @@
 #   --scout records kind=scout in the task's meta (report deliverable, scratch worktree;
 #   see AGENTS.md task lifecycle); --secondmate records kind=secondmate and launches in a
 #   provisioned firstmate home; the default is kind=ship.
+#   --lieutenant is the per-mission FLAVOR of the secondmate mechanism (one
+#   mechanism, two flavors; secondmate-provisioning "Lieutenant flavor" is the
+#   owner). It launches in a provisioned firstmate home
+#   exactly like --secondmate - same home validation, pre-launch sync, config
+#   propagation, and launch path - and records kind=secondmate so every consumer
+#   is unchanged. Its three additive deltas: --model defaults to opus (Fable via an
+#   explicit --model; the secondmate-harness model pin is ignored), meta gains a
+#   flavor=lieutenant line, and the routing-table line gains model:/status: fields.
 #   Before a secondmate launch, the home is locally fast-forwarded to the primary
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
 #   Ship/scout spawns refuse to launch unless the resolved task path is a real
@@ -78,13 +87,14 @@
 # plus a gitignored .fm-grok-turnend worktree pointer and a state token.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> mode=<mode> yolo=<on|off> window=<backend-target> worktree=<path>
 # mode/yolo are resolved per-project from data/projects.md for ship/scout tasks;
-# secondmate spawns record mode=secondmate, yolo=off, home=, and projects=.
+# secondmate spawns record mode=secondmate, yolo=off, home=, and projects=;
+# a lieutenant additionally records flavor=lieutenant.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
-  sed -n '2,78p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,90p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 case "${1:-}" in
@@ -113,6 +123,15 @@ fm_refuse_if_gate_agent
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
 KIND=ship
+# A lieutenant is the per-mission FLAVOR of the secondmate mechanism (one
+# mechanism, two flavors; secondmate-provisioning "Lieutenant flavor" is the
+# owner). --lieutenant sets KIND=secondmate so every
+# downstream consumer - fm-teardown, fm-watch, fm-crew-state, fm-send,
+# fm-fleet-view, the bootstrap liveness/sync sweep - treats it exactly as a
+# secondmate with ZERO changes. LIEUTENANT=1 gates only the three additive
+# deltas: an Opus model default, a flavor=lieutenant meta line, and the model:/
+# status: routing-table stamp below.
+LIEUTENANT=0
 HARNESS_ARG=
 MODEL=
 EFFORT=
@@ -141,6 +160,7 @@ for a in "$@"; do
   case "$a" in
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
+    --lieutenant) KIND=secondmate; LIEUTENANT=1 ;;
     --harness) want_value=harness ;;
     --harness=*) HARNESS_ARG=${a#--harness=}; HARNESS_SET=1 ;;
     --model) want_value=model ;;
@@ -391,7 +411,7 @@ esac
 # the harness itself came from the secondmate config fallback chain. Resolving
 # here on every spawn makes the pin durable across respawns. Precedence: explicit
 # --model/--effort flags still win over the file's tokens.
-if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
+if [ "$KIND" = secondmate ] && [ "$LIEUTENANT" -eq 0 ] && [ -z "$ARG3" ]; then
   if [ "$MODEL_SET" -eq 0 ]; then
     SM_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model)
     [ -z "$SM_MODEL" ] || MODEL=$SM_MODEL
@@ -407,6 +427,15 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   fi
 fi
 
+# Lieutenant model default: a lieutenant is Opus by default (Fable on request via
+# an explicit --model). This overrides the secondmate-harness model pin, which is
+# the persistent secondmate's knob, not a per-mission lieutenant's; an explicit
+# --model still wins. The harness itself still resolves through the secondmate
+# path above, so only the MODEL axis changes.
+if [ "$LIEUTENANT" -eq 1 ] && [ "$MODEL_SET" -eq 0 ]; then
+  MODEL=opus
+fi
+
 secondmate_registry_value() {
   local id=$1 key=$2 reg line value
   reg="$DATA/secondmates.md"
@@ -416,10 +445,47 @@ secondmate_registry_value() {
   case "$key" in
     home) value=$(printf '%s\n' "$line" | sed -n 's/^[^(]*(home: \([^;)]*\);.*/\1/p') ;;
     projects) value=$(printf '%s\n' "$line" | sed -n 's/^[^(]*(home: [^;)]*; scope: [^;)]*; projects: \([^;)]*\); added .*/\1/p') ;;
+    # model:/status: are the optional lieutenant fields, appended after
+    # "added <date>" so the home/scope/projects/added parsers above are
+    # unaffected. Absent on plain secondmate lines.
+    model) value=$(printf '%s\n' "$line" | sed -n 's/.*; model: \([^;)]*\).*/\1/p') ;;
+    status) value=$(printf '%s\n' "$line" | sed -n 's/.*; status: \([^;)]*\).*/\1/p') ;;
     *) return 1 ;;
   esac
   [ -n "$value" ] || return 1
   printf '%s\n' "$value"
+}
+
+# Stamp the optional lieutenant model:/status: fields onto this id's routing-table
+# line in data/secondmates.md, appended after "added <date>" inside the trailing
+# ")" so every existing home/scope/projects/added parser is untouched. Idempotent:
+# any prior model:/status: on the line is replaced. The base line is created by
+# fm-home-seed at seed time; a lieutenant has one by spawn time. A missing line is
+# a non-fatal warning (the launch itself already succeeded).
+stamp_lieutenant_registry() {
+  local id=$1 model=$2 status=$3 reg tmp
+  reg="$DATA/secondmates.md"
+  if [ ! -f "$reg" ] || ! grep -qE "^- $id( |$)" "$reg"; then
+    echo "warning: lieutenant $id has no routing-table entry in $reg to stamp model/status" >&2
+    return 0
+  fi
+  tmp="$reg.tmp.$$"
+  if awk -v id="$id" -v model="$model" -v status="$status" '
+    $0 ~ ("^- " id "( |$)") && index($0, "(") > 0 {
+      line = $0
+      gsub(/; model: [^;)]*/, "", line)
+      gsub(/; status: [^;)]*/, "", line)
+      sub(/\)[[:space:]]*$/, "; model: " model "; status: " status ")", line)
+      print line
+      next
+    }
+    { print }
+  ' "$reg" > "$tmp"; then
+    mv "$tmp" "$reg"
+  else
+    rm -f "$tmp"
+    echo "warning: lieutenant $id registry model/status stamp failed for $reg" >&2
+  fi
 }
 
 shell_quote() {
@@ -1026,9 +1092,17 @@ META_WINDOW=$T
   if [ "$KIND" = secondmate ]; then
     echo "home=$PROJ_ABS"
     echo "projects=$SECONDMATE_PROJECTS"
+    # flavor=lieutenant is additive: kind stays secondmate so all consumers are
+    # unchanged; this line records the per-mission flavor. Absent on a plain
+    # secondmate, keeping its meta byte-identical.
+    [ "$LIEUTENANT" -eq 1 ] && echo "flavor=lieutenant"
   fi
 } > "$STATE/$ID.meta"
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
+
+# Register the lieutenant flavor into the routing table: stamp its model and an
+# active status onto the line fm-home-seed created (AGENTS.md task lifecycle).
+[ "$LIEUTENANT" -eq 1 ] && stamp_lieutenant_registry "$ID" "${MODEL:-opus}" active
 
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
@@ -1057,4 +1131,6 @@ spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 spawn_send_key "$T" Enter
 
-echo "spawned $ID harness=$HARNESS kind=$KIND mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
+FLAVOR_NOTE=
+[ "$LIEUTENANT" -eq 1 ] && FLAVOR_NOTE=" flavor=lieutenant"
+echo "spawned $ID harness=$HARNESS kind=$KIND${FLAVOR_NOTE} mode=$MODE yolo=$YOLO window=$META_WINDOW worktree=$WT"
