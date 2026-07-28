@@ -34,7 +34,7 @@ Treat that page as the freshness source of truth over this table; re-fetch it if
 | Claude Fable 5 | `claude-fable-5` | Most capable widely released model, for the most demanding reasoning and longest-horizon agentic work | ~$10 / $50 | 1M tokens | Always-on adaptive thinking; the premium tier, use sparingly given cost |
 | Claude Opus 5 | `claude-opus-5` | Complex agentic coding and enterprise work | ~$5 / $25 | 1M tokens | Current top Opus tier as of the 2026-07-28 fetch; supersedes Claude Opus 4.8 (`claude-opus-4-8`), which the same page now lists under legacy models at the same price and remains a fallback if `claude-opus-5` is ever unavailable on a given harness |
 | Claude Sonnet 5 | `claude-sonnet-5` | Best combination of speed and intelligence | ~$3 / $15 (introductory $2 / $10 through 2026-08-31) | 1M tokens | The workhorse default for most crew work |
-| Claude Haiku 4.5 | `claude-haiku-4-5` | Fastest model with near-frontier intelligence | ~$1 / $5 | 200K tokens | No extended-thinking/adaptive-thinking axis |
+| Claude Haiku 4.5 | `claude-haiku-4-5-20251001` | Fastest model with near-frontier intelligence | ~$1 / $5 | 200K tokens | Predates the dateless-ID generation, so the exact API ID carries the date suffix; `claude-haiku-4-5` is the convenience alias, and a harness that requires the exact dated ID may reject the bare alias |
 
 Do not invent a model name or tier beyond what current authoritative discovery (this table, or the harness's own model listing per `harness-adapters` "Model support discovery") establishes.
 If a harness's model listing does not offer one of these exact IDs, fall back to that harness's nearest equivalent tier rather than guessing a name.
