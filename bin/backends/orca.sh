@@ -154,6 +154,11 @@ fm_backend_orca_worktree_create() {  # <project-path> <name>
   [ -z "$terminal" ] || printf '\t%s' "$terminal"
 }
 
+# <title> is decorative only: no caller in this adapter ever reads it back, so
+# a renamed terminal cannot break addressing (inspected for the tmux
+# window-rename fix, bin/backends/tmux.sh's fm_backend_tmux_create_task) -
+# not applicable, unlike tmux/zellij/cmux, because addressing here is the
+# opaque terminal-id handle returned below, never a name.
 fm_backend_orca_terminal_create() {  # <worktree-id> <title>
   local worktree_id=$1 title=$2 out terminal
   fm_backend_orca_tool_check || return 1

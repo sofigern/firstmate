@@ -73,6 +73,27 @@ if fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" 2>/dev/null; then
 fi
 pass "real tmux: fm_backend_tmux_create_task creates a window and refuses a duplicate"
 
+# --- window name pin survives an explicit agent-issued rename ---------------
+
+# automatic-rename/allow-rename off only stop tmux's own tracking and the
+# xterm title escape sequence; a spawned agent can still rename its window
+# with a literal `tmux rename-window` command (verified: those two options do
+# NOT block it). The window-renamed hook set by fm_backend_tmux_create_task is
+# what closes that gap - it must revert an explicit rename back to the
+# original name. This must fail if that hook is ever removed.
+tmux rename-window -t "$TARGET" "hijacked-by-agent"
+reverted=false
+for _ in $(seq 1 30); do
+  if tmux list-windows -t "$SESSION" -F '#{window_name}' | grep -qx "$WINDOW"; then
+    reverted=true
+    break
+  fi
+  sleep 0.1
+done
+[ "$reverted" = true ] \
+  || fail "an explicit tmux rename-window on the task's window was not reverted back to '$WINDOW'"
+pass "real tmux: an explicit rename-window on the task's window is reverted back to its pinned name"
+
 # --- send text + Enter -------------------------------------------------------
 
 # A newly-created interactive shell can exist before its startup files and line

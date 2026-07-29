@@ -91,6 +91,14 @@
 #     id, JSON that parses) rejects the "session not found" text fallback. A
 #     pane can still die between the preflight check and the operation call;
 #     docs/zellij-backend.md records that residual race.
+#   - Inspected for the tmux window-rename fix (bin/backends/tmux.sh's
+#     fm_backend_tmux_create_task): a spawned agent CAN rename its own tab with
+#     an explicit `zellij action rename-tab`, and zellij has no allow-rename-
+#     style option to block it. The effect differs from the pre-fix tmux bug -
+#     fm_backend_zellij_tab_matches_label above already fails closed on a title
+#     mismatch, so a renamed tab surfaces as an unreachable/stale task rather
+#     than a silent mistarget - but there is currently no lock, so this axis is
+#     applicable and left open.
 #   - `zellij list-tabs`/`new-tab` does NOT enforce unique tab names (same as
 #     herdr's tabs, unlike tmux's own window-name uniqueness), so the
 #     duplicate check below is ours, mirroring both prior adapters.
