@@ -306,6 +306,42 @@ test_resolves_outermost_claude_pid_in_nested_bgspare_chain() {
   pass "auto-arm: resolves the outermost pid of a nested contiguous claude ancestry (bg-spare chain)"
 }
 
+test_resolves_ancestry_past_dash_prefixed_login_shell() {
+  local dir out status claude_pid
+  dir=$(make_primary_dir "$TMP_ROOT/login-shell-ancestor")
+  : > "$dir/state/task.meta"
+  write_arm_fixture "$dir" actionable
+  # A login shell's process name is literally "-zsh" (the leading dash is how
+  # Unix marks a login shell), and BSD basename parses that leading "-z" as an
+  # option: `basename "-zsh"` fails with "illegal option -- z". The ancestry
+  # walk climbs through this exact shape whenever the harness sits directly
+  # above a login shell (e.g. a tmux pane's login shell that launched the
+  # harness), so this reproduces that ancestor without going through a real
+  # login shell. Not the nested-bgspare shape above: a single hop from the
+  # lock-owning claude pid straight to a dash-prefixed non-harness parent.
+  cat > "$dir/login-shell-outer.sh" <<'SH'
+#!/usr/bin/env bash
+"$FAKE_CLAUDE" -c '
+  printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+  "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
+'
+SH
+  chmod +x "$dir/login-shell-outer.sh"
+  out=$(printf '%s\n' '{"session_id":"loginshell"}' \
+    | FM_HOME="$dir" OUTER_SCRIPT="$dir/login-shell-outer.sh" \
+      bash -c 'exec -a "-zsh" bash "$OUTER_SCRIPT"' 2>&1); status=$?
+  claude_pid=$(cat "$dir/state/.lock" 2>/dev/null || true)
+  [ -n "$claude_pid" ] || fail "test setup did not record a claude session lock pid"
+  case "$out" in
+    *"illegal option"*|*"basename:"*)
+      fail "ancestry walk leaked a basename option-parsing error for a dash-prefixed login-shell ancestor: $out" ;;
+  esac
+  expect_code 2 "$status" "ancestry walk must resolve past a dash-prefixed login-shell ancestor and arm"
+  [ -e "$dir/state/arm-ran" ] || fail "hook did not resolve past the dash-prefixed login-shell ancestor"
+  [ "$(epoch_outcome "$dir")" = rewake ] || fail "login-shell-ancestor arm must record outcome=rewake"
+  pass "auto-arm: resolves ancestry past a dash-prefixed login-shell ancestor (e.g. \"-zsh\") with no basename error"
+}
+
 test_inert_when_fleet_idle() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/idle")
@@ -446,6 +482,7 @@ test_inert_when_lock_held_by_other_harness
 test_inert_when_afk
 test_stale_lock_recovery_preserves_afk_and_need_gates
 test_resolves_outermost_claude_pid_in_nested_bgspare_chain
+test_resolves_ancestry_past_dash_prefixed_login_shell
 test_inert_when_fleet_idle
 test_actionable_close_rewakes_with_reason
 test_failed_close_rewakes_with_failure_banner
