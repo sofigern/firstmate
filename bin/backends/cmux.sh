@@ -82,6 +82,14 @@
 #      created successfully sharing one title). The duplicate check below is
 #      ours, mirroring every other adapter, and uses home-scoped titles so a
 #      shared cmux app cannot cross-match another firstmate home's task.
+#   7. Inspected for the tmux window-rename fix (bin/backends/tmux.sh's
+#      fm_backend_tmux_create_task): because recovery here (finding #5) already
+#      leans on the workspace title rather than a persisted uuid,
+#      fm_backend_cmux_target_ready's expected-label check fails closed on a
+#      title mismatch (see below) rather than silently mistargeting - but no
+#      cmux primitive locks a workspace/surface title against an explicit
+#      rename from inside the pane, so this axis is applicable and left open,
+#      same posture as zellij.
 #
 #   Unanticipated finding, load-bearing for this adapter: the control socket
 #   defaults to `socketControlMode=cmuxOnly`, which REJECTS any CLI process

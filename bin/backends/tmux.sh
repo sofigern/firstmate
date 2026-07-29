@@ -77,9 +77,21 @@ fm_backend_tmux_container_ensure() {
 #   - Capture a STABLE window id with -P -F '#{window_id}', and let tmux append
 #     at the next free index by targeting the session with a trailing colon
 #     ("$ses:"), so a non-default base-index (e.g. base-index 1) cannot collide.
-#   - PIN the window name by disabling automatic-rename and allow-rename on the
-#     new window: the captain's tmux may rename the window away from fm-<id> once
-#     treehouse cd's into the worktree, which would break name-based targeting.
+#   - PIN the window name before the spawned agent can emit a single byte, with
+#     no gap for a race: automatic-rename off stops tmux's own rename-by-running-
+#     program tracking, and allow-rename off stops the xterm title escape
+#     sequence a program can print to rename its own window.
+#   - A spawned agent can still rename the window with an EXPLICIT `tmux
+#     rename-window` command - allow-rename only gates the escape-sequence path,
+#     not a direct command sent to the same server the agent's own shell is
+#     attached to (verified empirically: allow-rename off does not stop a
+#     literal `tmux rename-window` call). A window-renamed hook closes this
+#     gap: bound to the stable window id, it fires on ANY rename regardless of
+#     cause and immediately renames the window back, so there is no window of
+#     time where a stray name is observable by another caller. Re-running
+#     set-hook/set-window-option on an already-pinned window is harmless - each
+#     call simply overwrites its own option/hook slot with the same value - so
+#     a later safety re-assert never has a side effect.
 # The returned window id lets callers target the window even if its name is ever
 # lost, so worktree discovery cannot fall back to the active client's window.
 fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs> -> prints window id
@@ -91,6 +103,7 @@ fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs> -> prints 
   wid=$(tmux new-window -dP -F '#{window_id}' -t "$ses:" -n "$wname" -c "$proj_abs") || return 1
   tmux set-window-option -t "$wid" automatic-rename off 2>/dev/null || true
   tmux set-window-option -t "$wid" allow-rename off 2>/dev/null || true
+  tmux set-hook -w -t "$wid" window-renamed "rename-window -t $wid '$wname'" 2>/dev/null || true
   printf '%s\n' "$wid"
 }
 

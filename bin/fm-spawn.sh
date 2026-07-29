@@ -945,11 +945,11 @@ case "$BACKEND" in
     SES=$(fm_backend_tmux_container_ensure)
     T="$SES:$W"
     # #134 robustness (tmux): fm_backend_tmux_create_task captures a stable window
-    # id and pins the window name (automatic-rename/allow-rename off) so a captain's
-    # non-default tmux config cannot rename the window away from fm-<id> once
-    # treehouse cd's into the worktree. WT_TARGET carries that stable id for the
-    # rename-critical worktree-detection steps below; the persisted window= handle
-    # stays $T (the name form), which is safe now that rename is disabled.
+    # id and pins the window name against every rename path, including a
+    # spawned agent's own explicit rename (see that function's header for the
+    # full mechanism). WT_TARGET carries that stable id for the rename-critical
+    # worktree-detection steps below; the persisted window= handle stays $T
+    # (the name form), which is safe now that rename is pinned.
     WID=$(fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
     WT_TARGET="$WID"
     ;;
