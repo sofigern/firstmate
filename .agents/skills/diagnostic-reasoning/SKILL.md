@@ -11,7 +11,6 @@ metadata:
 
 # diagnostic-reasoning
 
-Use this procedure before scoping a reported bug and before acting on a diagnostic report.
 This skill is the single owner of Firstmate's bug-diagnosis reasoning procedure.
 Firstmate applies it when briefing delegated investigation and evaluating the resulting evidence, without taking over project-specific investigation itself.
 
@@ -22,24 +21,21 @@ Require an end-to-end reproduction aligned with the real user path whenever it i
 If a faithful reproduction is not feasible, record the exact limitation and use the closest representative path without presenting it as equivalent evidence.
 Capture the expected behavior, observed behavior, setup, inputs, and repeatability before assigning a cause.
 
-Separate these three facts explicitly:
+Separate these three facts explicitly and never collapse them into one label:
 
 - The **initiating trigger** is the event, input, or transition that starts the faulty behavior.
 - The **masking condition** is the independent state, environment, timing, cache, configuration, or path difference that hides or exposes the fault.
 - The **visible symptom** is what the end user or operator can actually observe.
 
-Do not collapse those facts into one label.
-A masking condition may explain why a fault appears only sometimes without being the initiating cause, and the visible symptom may be several layers downstream from both.
+A masking condition may explain intermittence without being the initiating cause, and the visible symptom may sit several layers downstream from both.
 
 ## Test the causal explanation
 
-Inspect the failing path and a proven path where the intended behavior is known to work.
-Compare their inputs, state transitions, dependencies, timing, and control flow to find the earliest meaningful divergence.
+Inspect the failing path and a proven path where the intended behavior works, and find the earliest meaningful divergence in their inputs, state transitions, dependencies, timing, and control flow.
 Inspect relevant history, including blame, commits, migrations, and prior implementations, when it can explain why the paths diverged or which invariant was intended.
 Do not treat the most recent nearby change as causal without evidence.
 
-Identify the smallest counterfactual that should change the outcome if the leading explanation is true.
-Change one condition at a time where practical, and record whether the symptom appears, disappears, or remains unchanged.
+Identify the smallest counterfactual that should change the outcome if the leading explanation is true, change one condition at a time where practical, and record whether the symptom appears, disappears, or remains unchanged.
 Seek disconfirming evidence deliberately: name what observation would falsify the leading explanation, run that check when feasible, and retain contradictory results instead of explaining them away.
 Compare the final explanation against the proven path and show why the proposed causal boundary accounts for both the failure and the success.
 
