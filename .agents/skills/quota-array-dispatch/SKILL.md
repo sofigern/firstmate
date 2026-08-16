@@ -34,10 +34,8 @@ Read all windows named by `boundedBy`, `limitingWindowIds`, `aheadWindowIds`, `b
 ## Pace semantics
 
 `reservePercentPoints = percentRemaining - timeRemainingPercent`.
-Negative reserve means usage is ahead of reset pace and creates conservation pressure.
-Positive reserve means usage is behind reset pace.
-`on_pace` is neutral.
-Conservation pressure is present for effective pace status `ahead`, effective pace status is `mixed` and any `aheadWindowIds` remain, or a bounding window is `ahead`.
+Negative reserve means usage ahead of reset pace and creates conservation pressure, positive reserve means usage behind pace, and `on_pace` is neutral.
+Conservation pressure is present for effective pace status `ahead`, effective pace status `mixed` with any `aheadWindowIds` remaining, or a bounding window that is `ahead`.
 `unknown` is valid explicit uncertainty from quota-axi, not parser failure or permission to assume health.
 
 ## Selection order
@@ -51,7 +49,6 @@ Never use pace or raw headroom to silently replace that reasoning class.
 4. Among pressured candidates, prefer the least-negative worst applicable reserve.
 5. Sustainable candidates: use known pace plus raw headroom.
    Prefer known sustainable evidence over `unknown` when comparable.
-   Do not collapse those facts into an opaque composite score.
 6. If unresolved pace changes the choice, report uncertainty.
 7. Absent pace or older schema: do not crash, fabricate pace, or treat absence as healthy/`on_pace`.
    Compare raw headroom only, state pace is unavailable, and keep safety rules.
