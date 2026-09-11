@@ -245,6 +245,11 @@ The helper's header owns the exact signal detection, relocated-home limitation, 
 Ship tasks change projects and ship by project mode (`no-mistakes`, `direct-PR`, or `local-only`); scout tasks leave standalone investigation reports at `data/<id>/report.md` and never push.
 The intake and authority contract in `AGENTS.md` owns when separate scout research is warranted.
 
+A ticket window is a ship task scaffolded with `bin/fm-brief.sh --ticket <key>`.
+Its crewmate is the lieutenant: it holds one ticket in one project for the ticket's whole life, takes every later request through the steering inbox, fans out with its harness's in-session subagents inside its one worktree, keeps the ticket ledger at `data/<id>/report.md`, and is torn down only when the ticket closes.
+The scaffold names the window by the ticket and refuses a second live window for the same ticket and project, so the one-window rule is enforced at scaffold time rather than remembered.
+The `ticket-lieutenant` skill owns firstmate's routing and close contract, the generated `# Ticket` section owns the worker's, and in-session fan-out relies on the delegation guard leaving those tools available in a task worktree ([subagent-guard.md](subagent-guard.md)).
+
 ## Dispatch profiles
 
 Crewmate and scout dispatch can stay on the static crewmate harness resolved by `config/crew-harness`, or it can use local dispatch profiles in `config/crew-dispatch.json`.

@@ -33,7 +33,7 @@ fm_brief_worker_role() {
 # Current worker role contract
 When this task works on Firstmate itself, this section supersedes every earlier brief instruction about your role and identity.
 When this task works on Firstmate itself, the repository root `AGENTS.md` (also imported by `CLAUDE.md`) is the primary/secondmate supervisor's contract: follow this brief instead of that supervisor contract.
-For that Firstmate task, do the assigned work yourself and report to firstmate; do not adopt the supervisor identity, delegate the task, run fleet supervision, or address the captain.
+For that Firstmate task, do the assigned work yourself and report to firstmate; do not adopt the supervisor identity, dispatch the task to the fleet as a supervisor would, run fleet supervision, or address the captain.
 This exception preserves this brief's safety and authority boundaries and applicable contributor guidance, including `CONTRIBUTING.md` and `firstmate-coding-guidelines` for Firstmate changes.
 Other projects retain their own instructions unchanged.
 EOF

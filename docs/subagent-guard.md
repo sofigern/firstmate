@@ -141,6 +141,7 @@ A marked secondmate home is in scope on purpose: it operates its own fleet and m
 
 A crewmate's disposable task worktree is a linked git worktree, which is the shape `bin/fm-spawn.sh` always hands out, so it is out of scope.
 A crewmate using delegation tools inside its own task worktree is legitimate and stays allowed.
+A ticket lieutenant's in-session fan-out depends on exactly this allowance (`ticket-lieutenant`; [architecture.md](architecture.md#two-task-shapes)).
 A non-firstmate repo is out of scope.
 Any failure to confirm the home is inert, never a block, so a broken environment can never deny a tool call.
 

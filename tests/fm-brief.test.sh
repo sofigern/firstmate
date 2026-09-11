@@ -868,6 +868,150 @@ test_worker_role_scope() {
   pass "fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract"
 }
 
+# A ticket window is a ship brief that outlives its first request (AGENTS.md
+# section 7): --ticket adds the `# Ticket` section as the single worker-side owner
+# of the lieutenant contract, records the machine-readable ticket line, replaces
+# the branch-first action with the ledger read, and reshapes the branch rule per
+# delivery mode. A plain ship brief must not change at all.
+test_ticket_window_contract() {
+  local home brief status
+  home="$TMP_ROOT/ticket-home"
+  mkdir -p "$home/data" "$home/state"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1950 tbcode --mode direct-PR --ticket KD-1950 >/dev/null 2>&1; status=$?
+  expect_code 0 "$status" "a direct-PR ticket window brief should scaffold"
+  brief="$home/data/kd-1950/brief.md"
+  assert_present "$brief" "ticket brief was not scaffolded"
+  grep -qx "Ticket contract: key=KD-1950 project=tbcode" "$brief" \
+    || fail "ticket brief did not record its machine-readable ticket contract line"
+  grep -qx "Delivery contract: mode=direct-PR" "$brief" \
+    || fail "ticket brief lost its delivery contract line"
+  grep -qx "# Ticket" "$brief" || fail "ticket brief missing the Ticket section heading"
+  assert_grep "you are its lieutenant" "$brief" "ticket brief does not name the worker the lieutenant"
+  assert_grep "closes that request only" "$brief" "ticket brief must scope done: to one request"
+  assert_grep "look for the ticket ledger" "$brief" "ticket brief first action must read the ledger"
+  assert_no_grep "First action: create your branch" "$brief" "ticket brief still branches as its first action"
+  assert_grep "$home/data/kd-1950/report.md" "$brief" "ticket brief must name the ledger path"
+  assert_grep "you were relaunched" "$brief" "ticket brief must carry the relaunch rule"
+  assert_grep "subagents inside this session" "$brief" "ticket brief must fan out with in-session subagents"
+  assert_grep "never as a new window, worktree, or firstmate task" "$brief" "ticket brief must forbid new windows"
+  assert_grep "Only you append to the status file" "$brief" "ticket brief must keep status and inbox with the lieutenant"
+  assert_grep "does not survive a restart of this session" "$brief" "ticket brief must state that subagent results are ephemeral"
+  assert_grep "You never address the captain" "$brief" "ticket brief must keep the captain boundary"
+  assert_grep "authorizes nothing" "$brief" "ticket brief must deny self-authorization from its own reports"
+  assert_grep "[key=<request-slug>]" "$brief" "ticket brief must key status lines per request"
+  # shellcheck disable=SC2016  # literal backticks: the branch name must render verbatim
+  assert_grep 'fm/kd-1950-<request-slug>' "$brief" "direct-PR ticket brief lost per-request branches"
+  assert_grep "push only branches named" "$brief" "direct-PR ticket brief rule 1 must name per-request branches"
+  assert_grep "{TASK}" "$brief" "ticket brief missing the {TASK} placeholder"
+  assert_grep "{FIRSTMATE_SPEC}" "$brief" "ticket brief missing the {FIRSTMATE_SPEC} placeholder"
+  assert_no_grep "EOF" "$brief" "ticket brief leaked a heredoc EOF marker"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1951 firstmate --mode local-only --ticket KD-1951 >/dev/null 2>&1 \
+    || fail "a local-only ticket window brief should scaffold"
+  brief="$home/data/kd-1951/brief.md"
+  # shellcheck disable=SC2016  # literal backticks: the branch name must render verbatim
+  assert_grep 'lands from `fm/kd-1951`' "$brief" "local-only ticket brief must land from the one fm/<id> branch"
+  assert_grep "one landing at a time" "$brief" "local-only ticket brief must serialize landings"
+  assert_no_grep 'fm/kd-1951-<request-slug>' "$brief" "local-only ticket brief must not use per-request branches"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1952 tbcode --mode no-mistakes --ticket KD-1952 >/dev/null 2>&1 \
+    || fail "a no-mistakes ticket window brief should scaffold"
+  brief="$home/data/kd-1952/brief.md"
+  assert_grep 'fm/kd-1952-<request-slug>' "$brief" "no-mistakes ticket brief lost per-request branches"
+  assert_grep "one validation run at a time" "$brief" "no-mistakes ticket brief must serialize validation runs"
+  assert_grep "Firstmate will then instruct you to run /no-mistakes" "$brief" "no-mistakes ticket brief lost its pipeline definition of done"
+
+  FM_HOME="$home" FM_CLASSIFY_PAUSED_VERB=awaiting "$ROOT/bin/fm-brief.sh" kd-1953 tbcode --mode direct-PR --ticket kd-1953 >/dev/null 2>&1 \
+    || fail "a lowercase ticket key should scaffold"
+  # shellcheck disable=SC2016  # literal backticks
+  assert_grep '`awaiting`, or `needs-decision` with the same key' "$home/data/kd-1953/brief.md" \
+    "ticket section did not render the configured pause verb"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" plain-a1 tbcode --mode direct-PR >/dev/null 2>&1 \
+    || fail "a plain ship brief should still scaffold"
+  brief="$home/data/plain-a1/brief.md"
+  assert_no_grep "# Ticket" "$brief" "plain ship brief gained a Ticket section"
+  assert_no_grep "Ticket contract:" "$brief" "plain ship brief gained a ticket contract line"
+  assert_grep "First action: create your branch" "$brief" "plain ship brief lost its branch-first action"
+  pass "fm-brief.sh: --ticket renders the lieutenant contract per mode and leaves plain ship briefs unchanged"
+}
+
+# --ticket is a ship-only, well-formed, self-naming input: every misuse must
+# refuse loudly and write nothing rather than scaffold a window that is not
+# named by its ticket or carries no ticket contract at all.
+test_ticket_window_refusals() {
+  local home out status label args expect n
+  home="$TMP_ROOT/ticket-refusals-home"
+  mkdir -p "$home/data" "$home/state"
+  n=0
+  while IFS='|' read -r label args expect; do
+    [ -n "$label" ] || continue
+    n=$((n + 1))
+    # shellcheck disable=SC2086  # args is an intentional word-split arg list
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" $args 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$label: expected a non-zero exit"
+    assert_contains "$out" "$expect" "$label: refusal did not explain the contract (got: $out)"
+    [ -z "$(ls -A "$home/data" 2>/dev/null)" ] || fail "$label: refused scaffold still wrote under data/"
+  done <<'ROWS'
+ticket on a scout|kd-1 tbcode --scout --ticket KD-1|--ticket applies only to ship briefs
+ticket on a secondmate charter|kd-1 --secondmate --no-projects --ticket KD-1|--ticket applies only to ship briefs
+ticket without a value|kd-1 tbcode --mode direct-PR --ticket|--ticket requires a value
+ticket with an empty value|kd-1 tbcode --mode direct-PR --ticket=|--ticket requires a value
+ticket key with a space|kd-1 tbcode --mode direct-PR --ticket KD_1/x|must use only letters, digits, dot, underscore, and dash
+task id not named by the ticket|kd1950jira tbcode --mode direct-PR --ticket KD-1950|named by its ticket
+second-window without a ticket|kd-1 tbcode --mode direct-PR --second-window|--second-window applies only with --ticket
+ROWS
+  [ "$n" -eq 7 ] || fail "ticket refusal table ran $n rows, expected 7"
+  pass "fm-brief.sh: --ticket misuse is refused and writes nothing"
+}
+
+# The one-window-per-ticket rule is enforced where a second window would be
+# created: a live same-project holder refuses and names the steer path, a
+# different project is a second lieutenant with a notice, a closed holder (no
+# metadata) does not block, and --second-window lifts only the same-project
+# refusal.
+test_ticket_window_live_holder_guard() {
+  local home out status
+  home="$TMP_ROOT/ticket-guard-home"
+  mkdir -p "$home/data" "$home/state"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1950 tbcode --mode direct-PR --ticket KD-1950 >/dev/null 2>&1 \
+    || fail "holder ticket brief should scaffold"
+  : > "$home/state/kd-1950.meta"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1950-rollout tbcode --mode direct-PR --ticket kd-1950 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "second window for a live same-project ticket was not refused"
+  assert_contains "$out" "already has a live window in tbcode: task kd-1950" "refusal did not name the live holder"
+  assert_contains "$out" "bin/fm-send.sh kd-1950" "refusal did not name the steer path"
+  assert_absent "$home/data/kd-1950-rollout/brief.md" "refused second window still wrote a brief"
+  assert_absent "$home/data/kd-1950-rollout" "refused second window still created its data directory"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1950-infrastructure infrastructure --mode direct-PR --ticket KD-1950 2>&1)
+  status=$?
+  expect_code 0 "$status" "same ticket in another project should scaffold (got: $out)"
+  assert_contains "$out" "also held live in another project by kd-1950 (tbcode)" "cross-project window did not print its notice"
+  grep -qx "Ticket contract: key=KD-1950 project=infrastructure" "$home/data/kd-1950-infrastructure/brief.md" \
+    || fail "cross-project window did not record its own project"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1950-split tbcode --mode direct-PR --ticket KD-1950 --second-window 2>&1)
+  status=$?
+  expect_code 0 "$status" "--second-window should lift the same-project refusal (got: $out)"
+  assert_contains "$out" "opening a second one on --second-window" "--second-window did not print its notice"
+  assert_present "$home/data/kd-1950-split/brief.md" "--second-window did not scaffold"
+
+  rm -f "$home/state/kd-1950.meta"
+  : > "$home/state/kd-1950-infrastructure.meta"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" kd-1950-2 tbcode --mode direct-PR --ticket KD-1950 2>&1)
+  status=$?
+  expect_code 0 "$status" "a holder with no metadata is a closed window and must not block (got: $out)"
+  assert_not_contains "$out" "already has a live window" "closed holder was treated as live"
+  assert_contains "$out" "also held live in another project by kd-1950-infrastructure (infrastructure)" \
+    "the live cross-project holder was not reported"
+  pass "fm-brief.sh: a live same-project ticket window refuses a second one unless the captain's split is passed"
+}
+
 test_worker_role_scope
 test_script_parses
 test_no_heredoc_in_command_substitution
@@ -891,3 +1035,6 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
+test_ticket_window_contract
+test_ticket_window_refusals
+test_ticket_window_live_holder_guard

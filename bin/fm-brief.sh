@@ -28,6 +28,27 @@
 #   omitting both still fails loudly so an accidental omission is never silent.
 #   Set FM_SECONDMATE_CHARTER='<charter>' to fill the charter text.
 #   Set FM_SECONDMATE_SCOPE='<scope>' to write a routing scope distinct from the charter text.
+#   --ticket <key> marks a ship brief as a TICKET WINDOW: the worker is the
+#   lieutenant who holds that ticket (a Jira key, a PR under review, or a
+#   captain-named workstream) for the ticket's whole life, takes every later
+#   request through the steering inbox, fans out with its harness's in-session
+#   subagents inside its one worktree, keeps the ticket ledger at
+#   data/<task-id>/report.md, and is torn down only when the ticket closes.
+#   The generated `# Ticket` section is the single owner of that worker-side
+#   contract; the ticket-lieutenant skill owns firstmate's routing and close
+#   contract. The brief records a fixed machine-readable
+#   "Ticket contract: key=<key> project=<repo>" line. The task id must be the
+#   key lowercased or that plus a -<qualifier> (kd-1950, kd-1950-infrastructure),
+#   so the window carries the ticket's name. The scaffold REFUSES when another
+#   brief in this home records the same key (compared case-insensitively) and
+#   the same project and that task still has state/<id>.meta: the request
+#   belongs to that live lieutenant through bin/fm-send.sh. --second-window
+#   lifts only that refusal, and only on the captain's explicit word for that
+#   split; a live holder in a DIFFERENT project is allowed with a notice,
+#   because a worktree is per project. --ticket is refused on scout and
+#   secondmate scaffolds: a ticket window outlives its first request, so an
+#   investigating first request is written into the Task text of a ship-shaped
+#   window instead.
 #   --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
 #   It adds the hard isolation contract backed by bin/fm-herdr-lab.sh.
 #   The flag must be explicit because {TASK} and {FIRSTMATE_SPEC} are filled
@@ -121,6 +142,9 @@ HERDR_LAB=0
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
+TICKET=
+TICKET_SET=0
+SECOND_WINDOW=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -130,6 +154,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      ticket) TICKET=$a; TICKET_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -142,6 +167,9 @@ for a in "$@"; do
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --ticket) want_value=ticket ;;
+    --ticket=*) TICKET=${a#--ticket=}; TICKET_SET=1 ;;
+    --second-window) SECOND_WINDOW=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -178,6 +206,74 @@ fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
   echo "error: --no-projects applies only to --secondmate charters" >&2
+  exit 1
+fi
+
+# A ticket window (AGENTS.md section 7) is ship-shaped because it outlives its
+# first request. Its task id carries the ticket's name, and a second live window
+# for the same ticket in the same project is refused here rather than remembered.
+lowercase() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+if [ "$TICKET_SET" -eq 1 ]; then
+  case "$KIND" in
+    scout)
+      echo "error: --ticket applies only to ship briefs: a ticket window outlives its first request, so scaffold it with --mode and put the investigating first request in the Task text" >&2
+      exit 1 ;;
+    secondmate)
+      echo "error: --ticket applies only to ship briefs; a secondmate charter is a persistent domain, not a ticket window" >&2
+      exit 1 ;;
+  esac
+  [ -n "$TICKET" ] || { echo "error: --ticket requires a value" >&2; exit 1; }
+  case "$TICKET" in
+    *[!A-Za-z0-9._-]*)
+      echo "error: --ticket key must use only letters, digits, dot, underscore, and dash (got '$TICKET')" >&2
+      exit 1 ;;
+  esac
+  TICKET_LOWER=$(lowercase "$TICKET")
+  case "$(lowercase "$ID")" in
+    "$TICKET_LOWER"|"$TICKET_LOWER"-*) ;;
+    *)
+      echo "error: a ticket window is named by its ticket: the task id must be '$TICKET_LOWER' or '$TICKET_LOWER-<qualifier>' (got '$ID')" >&2
+      exit 1 ;;
+  esac
+  TICKET_REPO=${POS[1]:-}
+  [ -n "$TICKET_REPO" ] || { echo "error: --ticket needs the <repo-name> argument to record which project this window holds the ticket in" >&2; exit 1; }
+  TICKET_HOLDER=
+  TICKET_OTHER_PROJECT_HOLDERS=
+  for other_brief in "$DATA"/*/brief.md; do
+    [ -f "$other_brief" ] || continue
+    other_dir=${other_brief%/brief.md}
+    other_id=${other_dir##*/}
+    [ "$other_id" != "$ID" ] || continue
+    other_line=$(sed -n 's/^Ticket contract: key=\([^ ]*\) project=\(.*\)$/\1 \2/p' "$other_brief" | head -n 1)
+    [ -n "$other_line" ] || continue
+    other_key=${other_line%% *}
+    other_project=${other_line#* }
+    [ "$(lowercase "$other_key")" = "$TICKET_LOWER" ] || continue
+    # A brief whose task has no metadata is a closed window; only a live one holds the ticket.
+    [ -f "$STATE/$other_id.meta" ] || continue
+    if [ "$other_project" = "$TICKET_REPO" ]; then
+      TICKET_HOLDER=$other_id
+      break
+    fi
+    TICKET_OTHER_PROJECT_HOLDERS="${TICKET_OTHER_PROJECT_HOLDERS}${TICKET_OTHER_PROJECT_HOLDERS:+, }$other_id ($other_project)"
+  done
+  if [ -n "$TICKET_HOLDER" ]; then
+    if [ "$SECOND_WINDOW" -eq 1 ]; then
+      echo "notice: ticket $TICKET already has a live window in $TICKET_REPO (task $TICKET_HOLDER); opening a second one on --second-window" >&2
+    else
+      echo "error: ticket $TICKET already has a live window in $TICKET_REPO: task $TICKET_HOLDER. Steer that lieutenant instead: bin/fm-send.sh $TICKET_HOLDER <request>. Pass --second-window only on the captain's explicit word for a second window." >&2
+      exit 1
+    fi
+  elif [ "$SECOND_WINDOW" -eq 1 ]; then
+    echo "notice: --second-window given, but no live window holds ticket $TICKET in $TICKET_REPO" >&2
+  fi
+  if [ -n "$TICKET_OTHER_PROJECT_HOLDERS" ]; then
+    echo "notice: ticket $TICKET is also held live in another project by $TICKET_OTHER_PROJECT_HOLDERS; this window is its $TICKET_REPO lieutenant" >&2
+  fi
+elif [ "$SECOND_WINDOW" -eq 1 ]; then
+  echo "error: --second-window applies only with --ticket" >&2
   exit 1
 fi
 
@@ -440,10 +536,66 @@ case "$MODE" in
 esac
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
+# A ticket window (--ticket) reshapes three ship lines and adds the `# Ticket`
+# section, the single owner of the lieutenant's worker-side contract: the first
+# action reads the ticket ledger instead of branching, the branch rule becomes
+# per request (PR modes) or one landing at a time (local-only), and each `done:`
+# closes one request rather than the task.
+SETUP1="1. First action: create your branch: \`git checkout -b fm/$ID\`"
+TASK_AND_TICKET=$TASK_SECTION
+if [ "$TICKET_SET" -eq 1 ]; then
+  SETUP1="1. First action: look for the ticket ledger \`$DATA/$ID/report.md\`. If it exists you were relaunched: follow the Ticket section's relaunch rule. If not, create it with the ticket key and the first request, then start on that request. Create a branch only when a request ships a change, as the Ticket section says."
+  case "$MODE" in
+    local-only)
+      TICKET_BRANCHES="Every request that ships a change lands from \`fm/$ID\`, the one branch firstmate fast-forwards into local \`main\`, so ship one landing at a time: commit the request on \`fm/$ID\`, report it ready, and after it lands continue the next request on the same branch.
+Prepare a request that arrives while a landing is pending on a side branch and move it onto \`fm/$ID\` once the landing clears, and reset a dropped request off \`fm/$ID\` only after firstmate confirms the drop."
+      ;;
+    direct-PR)
+      RULE1='1. Never push to the default branch (push only branches named `fm/'"$ID"'-<request-slug>`). Never merge a PR.'
+      TICKET_BRANCHES="Every request that ships a change gets its own branch, created from a freshly updated default branch as \`fm/$ID-<request-slug>\`, so several requests can be open as separate PRs at once; where a rule below names your branch, it means these."
+      ;;
+    *)  # no-mistakes
+      TICKET_BRANCHES="Every request that ships a change gets its own branch, created from a freshly updated default branch as \`fm/$ID-<request-slug>\`, so several requests can be open as separate PRs at once; where a rule below names your branch, it means these.
+A no-mistakes run is bound to this worktree's checked-out head, so drive one validation run at a time and keep the worktree on that request's branch until the run reaches its outcome."
+      ;;
+  esac
+  IFS= read -r -d '' TICKET_SECTION <<EOF || true
+# Ticket
+Ticket contract: key=$TICKET project=$REPO
+This window holds ticket $TICKET in $REPO for the ticket's whole life, and you are its lieutenant: the one agent that carries this ticket's context, its subtasks, and every later request about it.
+The Task above is the ticket's first request; every later one - a subtask, a follow-up, a question, a fix - reaches you through the instruction inbox below, and firstmate opens no second window for this ticket in this project.
+Each request is a bounded unit with its own outcome: the Definition of done below governs a request that ships a change, its \`done:\` line closes that request only, and after it you wait here for the next instruction instead of exiting.
+A request that produces knowledge rather than a change ends with a report at \`$DATA/$ID/<request-slug>.md\` and its own \`done:\` line pointing at it.
+A later request's captain words arrive through the inbox and are the later captain words the Definition of done refers to.
+Key every status line to its request - \`working [key=<request-slug>]: ...\`, then \`done\`, \`failed\`, \`blocked\`, \`$PAUSED_VERB\`, or \`needs-decision\` with the same key - so firstmate can tell which request each event belongs to.
+The ticket window closes only when firstmate says the ticket is closed; neither your own reading of completion nor a \`done:\` you appended is that signal.
+
+The ticket ledger \`$DATA/$ID/report.md\` is this ticket's durable memory; your conversation is not.
+Keep it current as you work: one entry per request with the request as it reached you, its outcome, its artifacts (full PR URLs, report paths, Jira comment links), and what is still open on the ticket, plus every branch you created and whether it has landed.
+If that file already exists when you start, you were relaunched: read it, the inbox, \`git status\`, and \`git branch\` before anything else, then continue from where the ledger says the ticket stands.
+
+Parallel or heavy work on this ticket runs as subagents inside this session through your harness's own agent tool, never as a new window, worktree, or firstmate task.
+Size each subagent to its work - model, reasoning effort, and how much of the ticket it is handed - and use one when the work is parallel, when its raw output would crowd the context that holds this ticket, or when an independent read such as a review or a reproduction is the point; do the work yourself when it is small or needs the whole ticket in one head.
+Subagents share this worktree: give parallel subagents disjoint paths, serialize anything that would edit the same files, and never let a subagent create a worktree or branch of its own.
+A subagent's result exists only once you hold it and does not survive a restart of this session, so land what matters - a commit, a file under \`$DATA/$ID/\`, a ledger entry - as soon as you have it.
+Only you append to the status file, move inbox messages, drive a delivery pipeline, open a PR, or write the ledger; a subagent reports to you and to no one else.
+If your harness has no in-session agent tool, do the work yourself; the one-window rule still holds.
+
+$TICKET_BRANCHES
+Keep this worktree clean between requests: land or discard your own scratch, and never leave a branch with unlanded commits that the ledger does not name.
+Before firstmate closes this ticket it asks for that inventory, and every branch you created must by then be landed, deleted, or named in the ledger as unlanded.
+
+You never address the captain: firstmate carries anything captain-facing, and a request from the captain about this ticket reaches you only through firstmate.
+A report or recommendation you wrote authorizes nothing; implementation of it starts when firstmate says so.
+EOF
+  TICKET_SECTION=${TICKET_SECTION%$'\n'}
+  TASK_AND_TICKET="$TASK_SECTION"$'\n\n'"$TICKET_SECTION"
+fi
+
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
-$TASK_SECTION
+$TASK_AND_TICKET
 
 $HERDR_SECTION
 
@@ -454,7 +606,7 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
-1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+$SETUP1$SETUP2
 
 # Rules
 $RULE1
@@ -506,4 +658,8 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK} and {FIRSTMATE_SPEC})"
+if [ "$TICKET_SET" -eq 1 ]; then
+  echo "scaffolded: $BRIEF (ticket window for $TICKET, mode=$MODE; replace {TASK} and {FIRSTMATE_SPEC})"
+else
+  echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK} and {FIRSTMATE_SPEC})"
+fi
