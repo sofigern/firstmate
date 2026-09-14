@@ -783,6 +783,82 @@ test_local_only_merged_to_local_main_allows() {
   pass "local-only worktree with work merged into local main is torn down (no regression)"
 }
 
+# bin/fm-teardown.sh ends a ticket window's teardown by relaying the captain's
+# ready-to-paste compaction line from bin/fm-compact-prompt.sh (AGENTS.md
+# section 7). The window is recognized by the brief line bin/fm-brief.sh writes,
+# so a plain task's teardown prints no such line.
+write_ticket_brief() {
+  local case_dir=$1 key=$2
+  mkdir -p "$case_dir/data/task-x1"
+  printf '%s\n' "# Task" "" "Ticket contract: key=$key project=$case_dir/project" \
+    > "$case_dir/data/task-x1/brief.md"
+}
+
+# Land the worktree's work on the project's local main, the same way the
+# merged-main case above does, so a local-only teardown proceeds to its
+# success path.
+land_wt_on_local_main() {
+  local case_dir=$1 wt_head
+  wt_commit "$case_dir" "merged work"
+  wt_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  git -C "$case_dir/project" update-ref refs/heads/main "$wt_head"
+}
+
+test_ticket_window_teardown_prints_the_compaction_line() {
+  local case_dir rc last
+  case_dir=$(make_case ticket-compact)
+  write_meta "$case_dir" local-only ship
+  write_ticket_brief "$case_dir" KD-2057
+  land_wt_on_local_main "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "ticket-compact: teardown should succeed"$'\n'"$(cat "$case_dir/stderr")"
+  assert_grep 'teardown task-x1 complete' "$case_dir/stdout" \
+    "ticket-compact: the completion line is missing"
+  assert_grep 'Compaction: ticket KD-2057 is closed' "$case_dir/stdout" \
+    "ticket-compact: the close did not tell firstmate to hand over the compaction ask"
+  assert_grep '/compact Ticket KD-2057 has just closed. Drop the detail of tickets that are closed' "$case_dir/stdout" \
+    "ticket-compact: the ready-to-paste /compact line names the closed ticket"
+  assert_grep 'When in doubt, keep an open thread and drop a closed one' "$case_dir/stdout" \
+    "ticket-compact: the /compact line lost its direction-of-loss clause"
+  # The ask is the last thing printed, so the tail of the output is the line to hand over.
+  last=$(tail -n 1 "$case_dir/stdout")
+  case "$last" in
+    "/compact "*) : ;;
+    *) fail "ticket-compact: the /compact line must be printed last, got: $last" ;;
+  esac
+  [ "$(grep -c '^/compact ' "$case_dir/stdout")" = 1 ] \
+    || fail "ticket-compact: expected exactly one /compact line"$'\n'"$(cat "$case_dir/stdout")"
+  assert_no_grep 'warning: the compaction line' "$case_dir/stderr" \
+    "ticket-compact: the relay warned although the line printed"
+  pass "a ticket window's teardown ends with the captain's ready-to-paste compaction line"
+}
+
+test_plain_task_teardown_prints_no_compaction_line() {
+  local case_dir rc
+  case_dir=$(make_case plain-no-compact)
+  write_meta "$case_dir" local-only ship
+  land_wt_on_local_main "$case_dir"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "plain-no-compact: teardown should succeed"$'\n'"$(cat "$case_dir/stderr")"
+  assert_grep 'teardown task-x1 complete' "$case_dir/stdout" \
+    "plain-no-compact: the completion line is missing"
+  assert_no_grep '/compact' "$case_dir/stdout" \
+    "plain-no-compact: a task that holds no ticket must not ask for a compaction"
+  assert_no_grep 'Compaction:' "$case_dir/stdout" \
+    "plain-no-compact: a task that holds no ticket must not announce a ticket close"
+  pass "a plain task's teardown prints no compaction line"
+}
+
 test_no_mistakes_origin_remote_allows() {
   local case_dir rc
   case_dir=$(make_case nm-origin)
@@ -3671,6 +3747,8 @@ test_teardown_closes_the_backlog_item_itself
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
+test_ticket_window_teardown_prints_the_compaction_line
+test_plain_task_teardown_prints_no_compaction_line
 test_no_mistakes_origin_remote_allows
 test_no_mistakes_truly_unpushed_refuses
 test_local_only_force_overrides_unpushed

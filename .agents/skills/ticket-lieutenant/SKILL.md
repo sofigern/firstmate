@@ -66,3 +66,4 @@ Not a reason: a different kind of request (a Jira comment, a PR, a migration), a
 - Before cleanup, ask the lieutenant for its branch inventory and read `git -C <worktree> branch -vv` yourself: `bin/fm-teardown.sh` checks only the checked-out branch and uncommitted changes, so an unlanded side branch would be discarded silently.
   Every branch must be landed, deleted, or explicitly named by the captain for discard.
 - Then run the ordinary teardown and record the ledger path with the ticket's PRs as the Done artifact.
+- Teardown ends by printing the captain's ready-to-paste compaction line; handing it over and repeating the ask until he has run it is part of the close (AGENTS.md section 7; the prompt's owner is `bin/fm-compact-prompt.sh`).

@@ -5,6 +5,8 @@
 # scout tasks before reporting success (a secondmate teardown transitions none,
 # since secondmates are not backlog items), then refresh/prune the project's
 # clone for PR-based ship tasks.
+# A ticket window's teardown ends by relaying the captain's ready-to-paste
+# compaction line from its single owner, bin/fm-compact-prompt.sh.
 # Removing state/<id>.meta and landing the backlog transition are one step, not
 # two: bin/fm-backlog-transition-lib.sh owns that invariant, and both halves run
 # under the task's own meta lock before this script reports success. Because the
@@ -941,6 +943,12 @@ elif [ "$TREEHOUSE_SLOT_LOCK_REQUIRED" = 1 ]; then
   exit 1
 fi
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
+# A ticket window is named by the brief line bin/fm-brief.sh writes, and the
+# brief survives teardown; the key feeds the compaction ask printed last.
+TEARDOWN_TICKET_KEY=
+if [ -f "$DATA/$ID/brief.md" ] && [ ! -L "$DATA/$ID/brief.md" ]; then
+  TEARDOWN_TICKET_KEY=$(sed -n 's/^Ticket contract: key=\([^ ]*\) project=.*$/\1/p' "$DATA/$ID/brief.md" | head -n 1)
+fi
 [ -n "$MODE" ] || MODE=no-mistakes
 
 # A record accepted as a legacy incarnation (no spawn_gen, --legacy-record
@@ -1425,6 +1433,18 @@ backlog_refresh_reminder() {
   else
     printf '%s\n' "Backlog: $ID just finished ($BACKLOG_SKIP_REASON). Update $backlog_display - move $ID to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due."
   fi
+}
+
+# A ticket close hands the captain the ready-to-paste compaction line. The
+# prompt has one owner, bin/fm-compact-prompt.sh; this only relays it with the
+# closed ticket's key, and a relay failure warns without unmaking a complete
+# teardown.
+compaction_prompt_reminder() {
+  [ -n "$TEARDOWN_TICKET_KEY" ] || return 0
+  printf '%s\n' "Compaction: ticket $TEARDOWN_TICKET_KEY is closed. Hand the captain the line below and repeat the ask in every reply until he has run it; the close is not finished before that."
+  "$SCRIPT_DIR/fm-compact-prompt.sh" --ticket "$TEARDOWN_TICKET_KEY" \
+    || echo "warning: the compaction line for ticket $TEARDOWN_TICKET_KEY could not be printed; run bin/fm-compact-prompt.sh --ticket $TEARDOWN_TICKET_KEY yourself" >&2
+  return 0
 }
 
 path_is_ancestor_of() {
@@ -3401,3 +3421,4 @@ else
   echo "teardown $ID complete (window $T, worktree $WT)"
 fi
 backlog_refresh_reminder
+compaction_prompt_reminder
