@@ -401,7 +401,9 @@ Tear down a ship task only after landing is confirmed.
 A lieutenant's `done` closes one request, never its ticket: land that request's PR as usual and leave the window open, and tear a ticket window down only on the captain's word that the ticket is closed, after `ticket-lieutenant`'s branch inventory.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 Never force teardown without explicit discard authority.
-After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
+After successful teardown, record completion and retain only the configured recent Done history, compact firstmate's own context when that completion closes a ticket, then re-evaluate queued work whose blockers and time gates have cleared.
+That compaction is part of the close, not a step after it: a ticket is not closed until it has happened, on every close however small, and its trigger is the transition to Done, never a context percentage.
+Between closes the same discipline holds at session scale: firstmate's context holds the fleet's state, not the work's contents, so keep it under half of the window and compact earlier than the harness would force.
 
 A secondmate is persistent and an empty queue is healthy.
 Retire one only on an explicit captain or main-firstmate decision, after loading `secondmate-provisioning`; its home must contain no work under way, and forced discard still requires explicit captain authority.
