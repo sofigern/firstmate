@@ -15,6 +15,8 @@
 #   ref      <owner>/<repo>#<n>  a bare #<n> resolved against the reply's only
 #                                GitHub repository (or the caller's --repo)
 #            #<n>                a bare #<n> with no single repository to bind to
+#                                (an explicit <owner>/<repo>#<n> in the text is accepted
+#                                as written, which is the form the guard banner prints)
 #   jira     <KEY-123>
 #   jenkins  https://<host>[/view/<v>]/job/<a>[/job/<b>...]/<n>  (no trailing /)
 #

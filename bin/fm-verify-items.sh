@@ -12,7 +12,8 @@
 # Items are anything bin/fm-livecheck-lib.sh's fm_livecheck_extract_items
 # recognizes, in any spelling that extractor accepts: GitHub pull request and
 # issue URLs, GitLab merge request URLs, Jira keys or /browse/ URLs, Jenkins
-# build URLs, and bare #<n> references, which --repo (or a single GitHub URL
+# build URLs, explicit <owner>/<repo>#<n> references (the form the guard banner
+# prints), and bare #<n> references, which --repo (or a single GitHub URL
 # among the items) binds to a repository. Duplicates collapse.
 #
 # Output, one TAB-separated line per item, in canonical item order:

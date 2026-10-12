@@ -24,6 +24,7 @@ If any was not, the turn does not end: the hook names the unverified items and t
 - A Jira key: two or more capitals, optional capitals or digits, a dash, and one to six digits, standing alone or under `/browse/` in a URL.
   Well-known technical tokens of that shape (`UTF-8`, `SHA-256`, `CVE-2024-1234`, `ISO-8601`, `Q3-2026`) are not keys; the library header owns the exclusion list.
 - A Jenkins build URL: a host, optionally a view, one or more `/job/<name>` segments, and a build number.
+- An explicit `<owner>/<repo>#<n>`, taken as written; this is the form the banner's fix command prints for a bound reference.
 - A bare `#<n>`, bound to the reply's only GitHub repository when exactly one appears in the reply, otherwise left bare.
   Section 9 of `AGENTS.md` already requires full URLs, so a bare number is the exception, and the banner says to give the URL or name the repository.
 
