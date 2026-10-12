@@ -27,7 +27,7 @@ VERIFY="$ROOT/bin/fm-verify-items.sh"
 
 make_case() {  # <name> -> prints the case dir; sets CASE, FAKEBIN, LOG, DATA
   CASE="$TMP_ROOT/$1"
-  mkdir -p "$CASE/data" "$CASE/config"
+  mkdir -p "$CASE/data" "$CASE/config" "$CASE/state"
   FAKEBIN=$(fm_fakebin "$CASE")
   LOG="$CASE/calls.log"
   DATA="$CASE/data"
@@ -73,7 +73,7 @@ SH
 }
 
 run_verify() {  # [args...] -> stdout; status in $?
-  PATH="$FAKEBIN:${RUN_PATH:-$BASE_PATH}" FM_CONFIG_OVERRIDE="$CASE/config" "$VERIFY" "$@" 2>"$CASE/stderr"
+  PATH="$FAKEBIN:${RUN_PATH:-$BASE_PATH}" FM_CONFIG_OVERRIDE="$CASE/config" FM_STATE_OVERRIDE="$CASE/state" "$VERIFY" "$@" 2>"$CASE/stderr"
 }
 
 # A fake removed from fakebin must not fall through to a real host binary:
@@ -89,6 +89,39 @@ pr_json() {  # <state> <isDraft> <mergedAt> <rollup-json> [review]
     '{state:$s, isDraft:$d, mergedAt:(if $m == "" then null else $m end), closedAt:(if $m == "" then null else $m end),
       mergeStateStatus:"CLEAN", reviewDecision:(if $rv == "" then null else $rv end), statusCheckRollup:$r,
       title:"The title\twith a tab", url:"https://github.com/o/r/pull/1"}'
+}
+
+# --- lookup ledger -----------------------------------------------------------
+
+test_lookup_ledger() {
+  local out before after ledger
+  make_case ledger >/dev/null
+  ledger="$CASE/state/.livecheck-ledger"
+  pr_json MERGED false 2026-10-10T09:00:00Z '[]' > "$DATA/gh-pr-https___github.com_o_r_pull_1"
+  without_tool twg
+  before=$(date +%s)
+  out=$(run_verify https://github.com/o/r/pull/1 https://github.com/o/r/pull/2 BST-1 | awk -F '\t' '{ print $3 }')
+  after=$(date +%s)
+  RUN_PATH=
+  assert_equals "merged
+error
+unverified" "$out" "the piped stdout is whatever the consumer made of it"
+  out=$(awk -F '\t' -v b="$before" -v a="$after" '$1 >= b && $1 <= a { print $2 "\t" $3 "\t" $4 }' "$ledger")
+  assert_equals "pr	https://github.com/o/r/pull/1	merged
+pr	https://github.com/o/r/pull/2	error
+jira	BST-1	unverified" "$out" "every looked-up item must be recorded with its state and the run's time, whatever consumed stdout"
+  awk 'BEGIN { for (i = 1; i <= 600; i++) printf "1\tjira\tOLD-%d\tdone\n", i }' > "$ledger"
+  FM_LIVECHECK_LEDGER_MAX=1 run_verify https://github.com/o/r/pull/1 >/dev/null
+  [ "$(wc -l < "$ledger" | tr -d ' ')" -eq 513 ] || fail "an oversized ledger must be trimmed to its newest 512 lines before the append"
+  assert_no_grep "OLD-88	" "$ledger" "the oldest lines go first"
+  assert_grep 'https://github.com/o/r/pull/1	merged' "$ledger" "the newest lookup survives the trim"
+  rm -rf "$CASE/state"
+  out=$(run_verify https://github.com/o/r/pull/1); status=$?
+  expect_code 0 "$status" "a missing state directory must not fail the lookup"
+  assert_contains "$out" "pr	https://github.com/o/r/pull/1	merged" "the lookup still prints without a ledger"
+  assert_absent "$CASE/state" "the verifier must not create a state directory"
+  [ ! -s "$CASE/stderr" ] || fail "a missing state directory must stay silent: $(cat "$CASE/stderr")"
+  pass "fm-verify-items: every lookup is recorded in the state ledger whatever consumes stdout"
 }
 
 # --- GitHub ------------------------------------------------------------------
@@ -253,6 +286,7 @@ SH
 
 test_github_pr_states_and_checks
 test_github_issue_and_refs
+test_lookup_ledger
 test_gitlab_merge_request
 test_jira_rest_backend
 test_jira_twg_backend_and_absence

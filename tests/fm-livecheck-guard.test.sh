@@ -61,6 +61,12 @@ t_result() {  # <id> <text> [is_error]
     '{type:"user", isSidechain:false, toolUseResult:{}, message:{role:"user", content:[{type:"tool_result", tool_use_id:$i, is_error:$e, content:$t}]}}'
 }
 
+t_stamped() {  # <iso-timestamp> <builder> <args...>  (stamps one entry as real transcripts do)
+  local ts=$1
+  shift
+  "$@" | jq -c --arg ts "$ts" '. + {timestamp: $ts}'
+}
+
 t_result_blocks() {  # <id> <text>  (array-shaped result content)
   jq -n -c --arg i "$1" --arg t "$2" \
     '{type:"user", message:{role:"user", content:[{type:"tool_result", tool_use_id:$i, content:[{type:"text", text:$t}]}]}}'
@@ -114,6 +120,23 @@ bash_record() {  # <command> <result-text> [error]
   record Bash "$(jq -n -c --arg c "$1" '{command:$c}')" "$2" "${3:-false}"
 }
 
+timed_bash_record() {  # <command> <result-text> <start-epoch> <end-epoch>
+  bash_record "$1" "$2" | jq -c --argjson s "$3" --argjson e "$4" '. + {start: $s, end: $e}'
+}
+
+verified_with_ledger() {  # <items-text> <records-text> <ledger-text>
+  local dir
+  dir=$(mktemp -d "$TMP_ROOT/verify.XXXXXX")
+  printf '%s\n' "$1" > "$dir/items"
+  printf '%s\n' "$2" > "$dir/records"
+  printf '%s\n' "$3" > "$dir/ledger"
+  fm_livecheck_verified "$dir/items" "$dir/records" "$dir/ledger"
+}
+
+iso_now() {
+  date -u +%Y-%m-%dT%H:%M:%S.000Z
+}
+
 # --- EXTRACT -----------------------------------------------------------------
 
 test_extract_names_every_kind_once() {
@@ -160,6 +183,22 @@ ref	sofigern/firstmate#6" "$out" "--repo must bind bare refs"
   out=$(fm_livecheck_extract_items "https://github.com/a/b/issues/3 fixes #4")
   assert_contains "$out" "ref	a/b#4" "an issue URL is repository context for a bare ref"
   pass "fm_livecheck_extract_items: bare refs bind to the single repository in context or stay bare"
+}
+
+test_extract_collapses_every_spelling_of_one_item() {
+  local out
+  out=$(fm_livecheck_extract_items "Captain, https://github.com/Tubular/Infrastructure/pull/21146/changes#diff-abc is open: tubular/infrastructure#21146, also https://github.com/tubular/infrastructure/pull/21146 and #21146.")
+  assert_equals "pr	https://github.com/Tubular/Infrastructure/pull/21146" "$out" "every spelling of one pull request must collapse to its first mention"
+  out=$(fm_livecheck_extract_items "o/r#9 then https://github.com/o/r/issues/9")
+  assert_equals "ref	o/r#9" "$out" "an issue URL and its owner/repo#N are one item"
+  out=$(fm_livecheck_extract_items "#5 https://github.com/a/b/pull/5 https://github.com/c/d/pull/2")
+  assert_not_contains "$out" "ref	#5" "a bare #N the reply names under a repository resolves to that item"
+  out=$(fm_livecheck_reply_items "https://github.com/sofigern/firstmate/pull/2 merged; #21146 is open")
+  assert_equals "pr	https://github.com/sofigern/firstmate/pull/2
+ref	#21146" "$out" "the guard's reading must not bind a bare #N to an unrelated repository the reply names"
+  out=$(fm_livecheck_reply_items "https://github.com/a/b/pull/7 (#7) is open")
+  assert_equals "pr	https://github.com/a/b/pull/7" "$out" "the guard's reading resolves a bare #N against the repositories the reply names"
+  pass "fm_livecheck_extract_items: every spelling of one pull request or issue is one item"
 }
 
 test_extract_rejects_malformed_urls() {
@@ -430,6 +469,51 @@ jira	$JIRA_KEY" "$out" "one command carrying two lookups verifies both items"
   pass "fm_livecheck_verified: helper output lines and compound commands"
 }
 
+test_verified_helper_lines_match_every_spelling() {
+  local url=https://github.com/tubular/infrastructure/pull/21146 items out
+  items="pr	$url
+ref	tubular/infrastructure#21146
+ref	Tubular/Infrastructure#21146
+ref	#21146
+issue	https://github.com/tubular/infrastructure/issues/21146"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh $url" "pr	$url	open	checks=pass")")
+  assert_equals "$items" "$out" "a URL lookup must verify the owner/repo#N, any-case, bare, and issue spellings of the same number"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh tubular/infrastructure#21146" "ref	tubular/infrastructure#21146	merged	x")")
+  assert_equals "$items" "$out" "an owner/repo#N lookup must verify the URL spellings"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh --repo tubular/infrastructure '#21146'" "ref	tubular/infrastructure#21146	open	x")")
+  assert_equals "$items" "$out" "a --repo-bound lookup must verify every spelling"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh https://github.com/other/repo/pull/21146" "pr	https://github.com/other/repo/pull/21146	open	x")")
+  assert_equals "ref	#21146" "$out" "the same number in another repository verifies only an unbound bare #N"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh $url" "pr	https://github.com/tubular/infrastructure/pull/2114	open	x")")
+  [ -z "$out" ] || fail "a different number must not verify: $out"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh '#21146'" "ref	#21146	unverified	bare #21146 names no repository")")
+  [ -z "$out" ] || fail "an unverified bare line is no lookup for any spelling: $out"
+  out=$(verified_for "pr	$url" "$(bash_record "gh pr view 21146 --repo Tubular/Infrastructure" 'x')")
+  assert_equals "pr	$url" "$out" "a gh lookup under a differently cased --repo is the same repository"
+  pass "fm_livecheck_verified: a helper lookup in any spelling verifies every spelling of the same item"
+}
+
+test_verified_helper_ledger_registers_piped_runs() {
+  local url=https://github.com/o/r/pull/3 items out ledger
+  items="pr	$url
+ref	o/r#3
+jira	$JIRA_KEY"
+  ledger="1000	pr	$url	merged
+1001	jira	$JIRA_KEY	unverified
+5000	jira	$JIRA_KEY	done"
+  out=$(verified_with_ledger "$items" "$(timed_bash_record "bin/fm-verify-items.sh $url $JIRA_KEY | awk -F'\t' '{print \$3}'" "merged
+unverified" 999 1001)" "$ledger")
+  assert_equals "pr	$url
+ref	o/r#3" "$out" "a piped helper run registers through its ledger records inside the call's window, never an unverified one"
+  out=$(verified_with_ledger "$items" "$(timed_bash_record "bin/fm-verify-items.sh $url > /dev/null" "" 1500 1600)" "$ledger")
+  [ -z "$out" ] || fail "ledger records outside the call's window must not count: $out"
+  out=$(verified_with_ledger "$items" "$(bash_record "bin/fm-verify-items.sh $url | wc -l" "1")" "$ledger")
+  [ -z "$out" ] || fail "a record without timestamps cannot claim ledger lines: $out"
+  out=$(verified_with_ledger "$items" "$(timed_bash_record "cat state/.livecheck-ledger" "x" 999 1001)" "$ledger")
+  [ -z "$out" ] || fail "only a helper run claims ledger lines, never a ledger read: $out"
+  pass "fm_livecheck_verified: a helper run counts through its ledger however its stdout was consumed"
+}
+
 # --- HOOK --------------------------------------------------------------------
 
 install_hook_scripts() {
@@ -606,6 +690,58 @@ test_hook_bare_ref_guidance() {
   pass "fm-livecheck-guard: a bare #n blocks with repository guidance"
 }
 
+test_hook_allows_any_spelling_and_piped_helper() {
+  local dir url=https://github.com/tubular/infrastructure/pull/21146 msg out status before after
+  dir=$(make_primary_dir "$TMP_ROOT/hook-spellings")
+  for msg in "Captain, #21146 is open." "Captain, tubular/infrastructure#21146 is open." \
+    "Captain, https://github.com/sofigern/firstmate/pull/2 merged and #21146 is open." \
+    "Captain, $url/changes#diff-abc is open."; do
+    {
+      t_prompt "ask"
+      t_bash v1 "bin/fm-verify-items.sh $url https://github.com/sofigern/firstmate/pull/2"
+      t_result v1 "pr	$url	open	checks=pass
+pr	https://github.com/sofigern/firstmate/pull/2	merged	x"
+      t_text "$msg"
+    } > "$dir/t.jsonl"
+    out=$(run_hook "$dir" "$(payload s1 "$dir/t.jsonl" "$msg")"); status=$?
+    expect_code 0 "$status" "a URL lookup must allow the reply \"$msg\": $out"
+  done
+  msg="Captain, $url is open."
+  {
+    t_prompt "ask"
+    t_bash v1 "bin/fm-verify-items.sh tubular/infrastructure#21146"
+    t_result v1 "ref	tubular/infrastructure#21146	open	x"
+    t_text "$msg"
+  } > "$dir/t.jsonl"
+  out=$(run_hook "$dir" "$(payload s1 "$dir/t.jsonl" "$msg")"); status=$?
+  expect_code 0 "$status" "an owner/repo#N lookup must allow the URL reply: $out"
+
+  mkdir -p "$dir/fakebin"
+  printf '#!/bin/sh\nexit 1\n' > "$dir/fakebin/gh"
+  chmod +x "$dir/fakebin/gh"
+  before=$(iso_now)
+  out=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir" bash -c "'$ROOT/bin/fm-verify-items.sh' '$url' | awk -F'\t' '{print \$3}'" 2>&1)
+  after=$(iso_now)
+  assert_equals "error" "$out" "the piped run must show only the transformed stdout"
+  {
+    t_prompt "ask"
+    t_stamped "$before" t_bash v1 "bin/fm-verify-items.sh $url | awk -F'\t' '{print \$3}'"
+    t_stamped "$after" t_result v1 "$out"
+    t_text "$msg"
+  } > "$dir/t.jsonl"
+  out=$(run_hook "$dir" "$(payload s1 "$dir/t.jsonl" "$msg")"); status=$?
+  expect_code 0 "$status" "a helper run piped through awk must still count: $out"
+  {
+    t_prompt "ask"
+    t_bash v1 "bin/fm-verify-items.sh $url | awk -F'\t' '{print \$3}'"
+    t_result v1 "error"
+    t_text "$msg"
+  } > "$dir/t.jsonl"
+  out=$(run_hook "$dir" "$(payload s2 "$dir/t.jsonl" "$msg")"); status=$?
+  expect_code 2 "$status" "a piped run the transcript cannot place in time must not borrow the ledger"
+  pass "fm-livecheck-guard: one lookup in any spelling, piped or not, allows every spelling of the same item"
+}
+
 test_hook_falls_back_to_transcript_final_message() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fallback")
@@ -752,6 +888,7 @@ test_tracked_registration() {
 test_extract_names_every_kind_once
 test_extract_skips_fences_and_technical_tokens
 test_extract_binds_bare_refs
+test_extract_collapses_every_spelling_of_one_item
 test_extract_rejects_malformed_urls
 test_extract_skips_quoted_titles_and_wiki_link_text
 test_turn_records_start_after_newest_prompt
@@ -762,6 +899,8 @@ test_final_message_is_trailing_assistant_text
 test_verified_github_lookups
 test_verified_jira_jenkins_gitlab_lookups
 test_verified_helper_lines_and_compound_commands
+test_verified_helper_lines_match_every_spelling
+test_verified_helper_ledger_registers_piped_runs
 test_hook_silent_without_items_or_payload
 test_hook_blocks_unverified_with_banner_and_command
 test_hook_allows_verified_and_resets_budget
@@ -769,6 +908,7 @@ test_hook_partial_verification_names_only_the_rest
 test_hook_budget_then_warned_allow
 test_hook_ignores_stop_hook_active
 test_hook_bare_ref_guidance
+test_hook_allows_any_spelling_and_piped_helper
 test_hook_falls_back_to_transcript_final_message
 test_hook_unreadable_transcript_warns_and_allows
 test_hook_stands_down_outside_scope

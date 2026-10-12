@@ -146,7 +146,7 @@ state/               runtime records and signals; gitignored
   .afk               durable away-mode daemon flag on the harnesses that still launch the daemon (never on Pi); present = sub-supervisor may inject escalations (set by the daemon entry, cleared on user return)
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
-  .livecheck-blocks   the live-status guard's consecutive-block count for the current session; bin/fm-livecheck-guard.sh owns it, and deleting it only forgets the count
+  .livecheck-blocks .livecheck-ledger   the live-status guard's consecutive-block count for the current session, and bin/fm-verify-items.sh's recent lookups the guard credits however that run's output was consumed; bin/fm-livecheck-guard.sh and bin/fm-livecheck-lib.sh own them, and deleting either only forgets
   .cursor-park-owner .cursor-park-owner.lock .turnend-cursor-blocks   Cursor stop-hook owner record, publication and commit lock, and bounded repair-nag budget; never touch
   .hash-* .count-* .stale-* .stale-since-* .churn-since-* .paused-* .wedge-escalations-* .writing-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   watcher internals; never touch
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete

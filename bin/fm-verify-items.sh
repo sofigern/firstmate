@@ -30,6 +30,11 @@
 # Exit status is 0 when every item got a real state, 1 when any item is
 # error or unverified, 2 on usage errors. Nothing it prints is a credential.
 #
+# Each line is also appended, with its state and the time, to the lookup
+# ledger in the effective FM_HOME's state directory (FM_STATE_OVERRIDE wins),
+# so the live-status hook credits the run even when its stdout was piped
+# elsewhere; bin/fm-livecheck-lib.sh owns the ledger format.
+#
 # Backends and credentials, read fresh on every run:
 #   GitHub   gh (authenticated as usual: `gh auth status`)
 #   GitLab   glab (its own authentication); the instance comes from the URL
@@ -49,6 +54,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 # shellcheck source=bin/fm-livecheck-lib.sh
 . "$SCRIPT_DIR/fm-livecheck-lib.sh"
@@ -105,7 +111,9 @@ if [ -z "$ITEMS" ]; then
 fi
 
 FAILED=0
+LEDGER=$(fm_livecheck_ledger_path "$STATE")
 emit() {  # <kind> <id> <state> <detail>
+  fm_livecheck_ledger_append "$LEDGER" "$1" "$2" "$3"
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4"
   case "$3" in error|unverified) FAILED=1 ;; esac
 }

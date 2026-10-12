@@ -24,16 +24,19 @@
 #   1. unreadable or absent payload, missing jq, foreign-host payload, out of
 #      scope, or opted out: exit 0 silently.
 #   2. no work item in the reply (bin/fm-livecheck-lib.sh
-#      fm_livecheck_extract_items): exit 0 and reset the block count.
+#      fm_livecheck_reply_items): exit 0 and reset the block count.
 #   3. every named item was looked up live this turn
-#      (fm_livecheck_verified over fm_livecheck_turn_records): exit 0 and reset
-#      the block count.
+#      (fm_livecheck_verified over fm_livecheck_turn_records and the lookup
+#      ledger bin/fm-verify-items.sh appends to): exit 0 and reset the block
+#      count.
 #   4. the transcript cannot be read, so nothing can be judged: exit 0 and
 #      print a {"systemMessage"} naming the items left unverified.
 #   5. otherwise block: exit 2 with a banner (stderr) that names every
 #      unverified item and the one command that checks them all,
-#      bin/fm-verify-items.sh, bounded to FM_LIVECHECK_BLOCK_BUDGET (default 2)
-#      consecutive blocks per session. The next stop after the budget is spent
+#      bin/fm-verify-items.sh (an unverified bare #<n> goes into it in the form
+#      fm_livecheck_extract_items binds it to, or gets --repo advice when the
+#      reply names no single repository), bounded to
+#      FM_LIVECHECK_BLOCK_BUDGET (default 2) consecutive blocks per session. The next stop after the budget is spent
 #      is allowed with a {"systemMessage"} that names what stayed unverified,
 #      so the captain sees the gap instead of the session looping. Any allowed
 #      stop resets the count. stop_hook_active is deliberately ignored: Claude
@@ -47,6 +50,8 @@
 #
 # State: state/.livecheck-blocks ("session=<id>" then "count=<n>"), written
 # atomically; teardown never touches it and deleting it only forgets the count.
+# state/.livecheck-ledger is read, never written, here; the library header
+# owns its format.
 #
 # Environment:
 #   FM_LIVECHECK_BLOCK_BUDGET=2   consecutive blocks per session before the
@@ -106,7 +111,7 @@ budget_reset() {
   rm -f "$BUDGET_FILE" 2>/dev/null || true
 }
 
-ITEMS=$(fm_livecheck_extract_items "$MESSAGE")
+ITEMS=$(fm_livecheck_reply_items "$MESSAGE")
 if [ -z "$ITEMS" ]; then
   budget_reset
   exit 0
@@ -130,7 +135,7 @@ if [ -z "$TRANSCRIPT" ] || ! fm_livecheck_turn_records "$TRANSCRIPT" > "$WORK/re
   exit 0
 fi
 
-VERIFIED=$(fm_livecheck_verified "$WORK/items" "$WORK/records" 2>/dev/null) || VERIFIED=
+VERIFIED=$(fm_livecheck_verified "$WORK/items" "$WORK/records" "$(fm_livecheck_ledger_path "$STATE")" 2>/dev/null) || VERIFIED=
 printf '%s\n' "$VERIFIED" > "$WORK/verified"
 UNVERIFIED=$(grep -v -x -F -f "$WORK/verified" "$WORK/items" 2>/dev/null | sed '/^$/d')
 if [ -z "$UNVERIFIED" ]; then
@@ -147,21 +152,26 @@ if [ -f "$BUDGET_FILE" ]; then
   [ "$old_session" = "$SESSION_ID" ] && COUNT=$old_count
 fi
 
+BOUND=$(fm_livecheck_extract_items "$MESSAGE")
 ARGS=
+BARE_REFS=
 while IFS=$'\t' read -r kind id; do
   [ -n "$id" ] || continue
-  case "$kind" in
-    ref)
-      case "$id" in
-        '#'*) continue ;;
-      esac
+  case "$kind:$id" in
+    'ref:#'*)
+      bound=$(printf '%s\n' "$BOUND" | awk -F '\t' -v n="${id#\#}" '$1 == "ref" && $2 ~ ("#" n "$") && $2 !~ /^#/ { print $2; exit }')
+      if [ -n "$bound" ]; then
+        ARGS="$ARGS '$bound'"
+      else
+        BARE_REFS="$BARE_REFS$id "
+      fi
+      continue
       ;;
   esac
   ARGS="$ARGS '$id'"
 done <<EOF
 $UNVERIFIED
 EOF
-BARE_REFS=$(printf '%s\n' "$UNVERIFIED" | awk -F '\t' '$1 == "ref" && $2 ~ /^#/ { print $2 }' | tr '\n' ' ')
 
 if [ "$COUNT" -ge "$BLOCK_BUDGET" ]; then
   budget_reset
