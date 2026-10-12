@@ -208,6 +208,14 @@ The bound is required rather than cosmetic because churn and pane staleness read
 The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
 [`architecture.md`](architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
 
+## Live-status check credentials (config/livecheck.env)
+
+`bin/fm-verify-items.sh`, the one-call batch check the live-status guard names ([`livecheck-guard.md`](livecheck-guard.md)), sources this optional gitignored file on every run.
+GitHub and GitLab need nothing here because `gh` and `glab` carry their own authentication.
+Jira over REST needs `FM_JIRA_BASE_URL`, `FM_JIRA_EMAIL`, and `FM_JIRA_TOKEN` (Jira Cloud basic auth with an API token); when they are absent the check falls back to the Atlassian `twg` CLI if installed, and otherwise reports the key as unverified.
+Jenkins needs nothing for an anonymous-readable instance; `FM_JENKINS_AUTH` (`user:token`) or `FM_JENKINS_AUTH_FILE` (a file whose first line is `user:token`) adds basic auth where it is required.
+A present `config/livecheck-off` opts the home out of the guard itself; both files are local and neither is inherited by secondmate homes.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked `.no-mistakes.yaml` sets `test.evidence.store_in_repo: true` and pins `commands.lint` to `bin/fm-lint.sh`, the same owner CI invokes.
@@ -998,6 +1006,9 @@ FM_CLAUDE_AUTOARM_ATTEMPTS=2   # bounded Stop-owned arm attempts per Claude auto
 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=800   # milliseconds the --claude turn-end guard waits for watcher health, an open Stop auto-arm generation claim, or a fresh epoch before deciding recovery ownership or failure progression
 FM_CLAUDE_AUTOARM_EPOCH_FRESH=15   # seconds a recorded auto-arm outcome remains eligible for the current event epoch's recovery or failure decision
 FM_CLAUDE_TURNEND_BLOCK_BUDGET=3   # consecutive --claude guard re-blocks before the verified one-time attended fail-open; safely below Claude Code's 8-block override
+FM_LIVECHECK_BLOCK_BUDGET=2   # consecutive live-status guard blocks per session before the warned allow (docs/livecheck-guard.md)
+FM_LIVECHECK_MAX_WINDOW=67108864   # bytes of transcript tail the live-status guard will read looking for the turn's start before using the tail as the turn
+FM_LIVECHECK_JIRA_IGNORE=   # space-separated prefixes that are never Jira keys; the default list is in bin/fm-livecheck-lib.sh
 FM_ARM_CONFIRM_TIMEOUT=10   # seconds fm-watch-arm waits to confirm a fresh watcher before reporting FAILED; default 30 on Git Bash/MSYS
 FM_ARM_ATTACH_POLL=0.5  # seconds between checks while fm-watch-arm is attached to an existing healthy watcher cycle
 FM_OPENCODE_ARM_READY_TIMEOUT_MS=12000   # milliseconds the OpenCode primary watcher plugin waits for an arm attempt to report started, healthy, wake, or failure; default 35000 on Windows to stay above the MSYS confirm budget

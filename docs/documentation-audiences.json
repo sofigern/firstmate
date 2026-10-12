@@ -67,6 +67,10 @@
       "target": "docs/verification/supervision.md"
     },
     {
+      "source": "docs/livecheck-guard.md",
+      "target": "docs/verification/supervision.md"
+    },
+    {
       "source": "docs/turnend-guard.md",
       "target": "docs/verification/supervision.md"
     },
@@ -427,6 +431,10 @@
     {
       "path": "docs/supervision-protocols/unknown.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": "docs/livecheck-guard.md",
+      "audience": "operator-current"
     },
     {
       "path": "docs/tmux-backend.md",

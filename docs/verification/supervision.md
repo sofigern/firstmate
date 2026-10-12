@@ -445,6 +445,38 @@ Observed output:
 fm-claude-stop-autoarm: ok
 ```
 
+## Live-status guard
+
+The live-status Stop hook (`bin/fm-livecheck-guard.sh --claude`, [`livecheck-guard.md`](../livecheck-guard.md)) was validated against the installed Claude Code on 2026-10-12 in an isolated clone with an isolated `FM_HOME` and no work in flight.
+
+The two harness-supplied facts the portable suite assumes were established first from a real Stop payload captured by a hook that copied its stdin:
+
+```text
+claude --version: 2.1.296 (Claude Code)
+keys: background_tasks, cwd, effort, hook_event_name, last_assistant_message, permission_mode, prompt_id, session_crons, session_id, stop_hook_active, transcript_path
+hook_event_name = Stop
+stop_hook_active = false
+last_assistant_message = PR https://github.com/sofigern/firstmate/pull/1 and BST-1 are open.
+transcript_path = ~/.claude/projects/<cwd-slug>/<session>.jsonl   (present and readable for a `claude -p` session too)
+```
+
+The integration itself is exercised by the opt-in guard:
+
+```sh
+FM_LIVECHECK_LIVE_E2E=1 tests/fm-livecheck-guard-live-e2e.test.sh
+```
+
+Observed output:
+
+```text
+harness: 2.1.296 (Claude Code)
+ok - claude live: the Stop payload carried the reply and transcript, the unchecked PR was blocked 1 time(s)
+ok - claude live: the model ran the banner's verifier command 1 time(s) and the checked reply ended the turn
+```
+
+The run proved that a reply naming an unchecked pull request was blocked exactly once with the banner, that the model ran the one `bin/fm-verify-items.sh` command the banner named, that the identical reply then ended the turn because the verifier call sat inside the same turn after the block, and that the allowed stop left no block count behind.
+Read cost was measured on the same day against a live 232 MB primary transcript: the turn reader found the newest prompt inside the first 1 MiB tail in 0.13 s, so an ordinary stop pays for its own turn and never for the whole file.
+
 ## Watcher continuity
 
 The cross-harness evidence combines the 2026-07-17 live pass with Claude's replacement Stop-owned path revalidated on 2026-07-24, all against isolated project and home state.
