@@ -147,7 +147,7 @@ fm_livecheck_tokens() {  # <text>
           out = drop_spans(out, lq, rq)
           print out
         }' \
-    | tr -c 'A-Za-z0-9_./:#?=&%+-\n' '\n' \
+    | tr -c 'A-Za-z0-9_./:#?=&%+\n-' '\n' \
     | sed -e 's/[.,;:!?]*$//' -e '/^$/d'
 }
 
