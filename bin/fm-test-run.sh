@@ -264,7 +264,7 @@ family_for_basename() {
     fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-omp-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
-    fm-lint-workflows.test.sh|\
+    fm-lint-workflows.test.sh|fm-livecheck-guard.test.sh|fm-verify-items.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
     fm-harness-adapter-references.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
@@ -323,7 +323,7 @@ family_for_basename() {
     fm-codex-continuity-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
-    fm-harness-liveness-drift-live-e2e.test.sh|\
+    fm-harness-liveness-drift-live-e2e.test.sh|fm-livecheck-guard-live-e2e.test.sh|\
     fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
@@ -1257,6 +1257,13 @@ families_for_changed_path() {
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
       ;;
+    bin/fm-livecheck*|bin/fm-verify-items.sh)
+      # The live-status Stop hook and its batch verifier share one library;
+      # the live guard proves the Stop payload shape against the real harness.
+      printf '%s\n' __script__:fm-livecheck-guard.test.sh
+      printf '%s\n' __script__:fm-verify-items.test.sh
+      printf '%s\n' __script__:fm-livecheck-guard-live-e2e.test.sh
+      ;;
     bin/fm-afk*)
       printf '%s\n' afk
       printf '%s\n' real-herdr-gated
@@ -1327,7 +1334,11 @@ families_for_changed_path() {
     .pi/extensions/fm-primary-turnend-guard.ts)
       # The run tier's two harness-supplied facts (source vocabulary and
       # context-reset stdout injection) only show up against a real harness.
+      # The tracked Claude entry inventory is pinned by the turn-end guard and
+      # live-check guard suites.
       printf '%s\n' __script__:fm-pi-windows-shell-invocation.test.sh
+      printf '%s\n' __script__:fm-turnend-guard.test.sh
+      printf '%s\n' __script__:fm-livecheck-guard.test.sh
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
       ;;

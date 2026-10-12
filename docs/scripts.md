@@ -47,6 +47,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
 | `fm-turnend-guard.sh`    | Shared primary turn-end guard predicate so no turn ends blind (docs/turnend-guard.md) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
+| `fm-livecheck-guard.sh`  | Claude Stop hook refusing to end a turn whose reply names work not checked live in that turn (docs/livecheck-guard.md) |
+| `fm-livecheck-lib.sh`    | Single owner of the live-status rule's item extraction, turn-window transcript reading, and lookup recognition |
+| `fm-verify-items.sh`     | Look up the live status of a batch of pull requests, issues, Jira keys, and Jenkins builds in one call |
 | `fm-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
 | `fm-arm-command-policy.mjs` | Semantic owner of the watcher-arm PreToolUse policy (docs/arm-pretool-check.md)   |
