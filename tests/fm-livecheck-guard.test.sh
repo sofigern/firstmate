@@ -301,7 +301,7 @@ test_turn_records_grow_the_tail_window() {
     t_result w1 "y"
     # Five ~300 KiB noise entries push the prompt well past the first 1 MiB tail.
     for _ in 1 2 3 4 5; do
-      jq -n -c --arg p "$pad" '{type:"attachment", attachment:{content:$p}}'
+      printf '{"type":"attachment","attachment":{"content":"%s"}}\n' "$pad" # printf is a builtin: a 300 KB jq --arg exceeds Linux's per-argument limit
     done
     t_text "final"
   } > "$t"
