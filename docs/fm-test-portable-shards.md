@@ -125,9 +125,16 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 | Lane | Bound | Rationale |
 |---|---|---|
-| portable parallel 1/2 | job `timeout-minutes: 10` | The measured shard sums are about three minutes and the timeout is a hang tripwire. |
+| portable parallel 1/2 | job `timeout-minutes: 30` | Shard 1 reached about 10 minutes of passing work on 2026-10-12 (runs 38226059349 and 38235265286: `fm-captain-hold-lifecycle` 287 s, `fm-lint` 163 s, `fm-test-run` 89 s) and was cancelled at the former 10-minute cap, so the cap now sits at the same 30-minute tier as the serial shards and remains a hang tripwire. |
 | portable serial 1-5 | job `timeout-minutes: 30` | Current runners can take about 20 minutes; the 30-minute cap remains a hang tripwire while leaving margin for job setup and runner-speed spread. |
 | Herdr | family-run step `timeout-minutes: 20`; job `timeout-minutes: 75` backstop | Healthy runs finished around 7 minutes before this lane gained `fm-backend-herdr-focus-flash-e2e`, which measures about 2 minutes against a real lab locally, so the step bound is still the hang tripwire (cleanup and timing artifacts still upload) while the job cap stays a last-resort backstop. Refresh this figure from the lane's uploaded timing artifact. |
 
 Timeouts are hang tripwires rather than expected healthy durations.
 `.github/workflows/ci.yml` owns the exact numbers.
+
+## Pi package pin
+
+Both Pi-installing CI steps install `@earendil-works/pi-coding-agent@0.87.1`, the last release of the Pi 0.8x line, instead of the floating latest.
+The Pi extensions under `.pi/extensions/` and their tests target that line: Pi 0.99.0 changed the stock tool-header rendering that `tests/fm-pi-branch-extension.test.sh` compares against, and Pi 1.0.1 renamed the HTML export renderer lookup that `tests/fm-calm-pi-extension.test.sh` drives, so an unpinned install failed both on every run from 2026-10-12 while every other check passed.
+Measured on 2026-10-12 with each version's package pointed at through `FM_PI_PACKAGE_DIR` and its `pi` on `PATH`: both tests pass on 0.87.1 (13 and 42 cases), the branch test fails on 0.99.2, and both fail on 1.1.0.
+Upstream `kunchenguid/firstmate` adapted the extensions and tests to the newer Pi line in #6162, #6338, and #6530; lifting the pin means taking those changes.
