@@ -25,8 +25,14 @@ If any was not, the turn does not end: the hook names the unverified items and t
   Well-known technical tokens of that shape (`UTF-8`, `SHA-256`, `CVE-2024-1234`, `ISO-8601`, `Q3-2026`) are not keys; the library header owns the exclusion list.
 - A Jenkins build URL: a host, optionally a view, one or more `/job/<name>` segments, and a build number.
 - An explicit `<owner>/<repo>#<n>`, taken as written; this is the form the banner's fix command prints for a bound reference.
-- A bare `#<n>`, bound to the reply's only GitHub repository when exactly one appears in the reply, otherwise left bare.
+- A bare `#<n>`.
+  When the reply names the same number under a repository, in any spelling, the bare form is that item.
+  Otherwise it is resolved against the lookups made this turn, and a lookup of that number in any GitHub repository verifies it.
+  A reply naming one repository's pull request can still mention another repository's number, so the reply's only repository is offered in the banner's command but never assumed.
   Section 9 of `AGENTS.md` already requires full URLs, so a bare number is the exception, and the banner says to give the URL or name the repository.
+
+Every spelling of one GitHub pull request or issue is one item: its URL with or without a trailing `/files`, `/changes`, fragment, or query, `<owner>/<repo>#<n>`, and a bound `#<n>`, in any letter case.
+A lookup in one spelling therefore verifies a reply that uses any other, and a reply that names the same pull request twice in two spellings lists it once.
 
 Three kinds of span are quoted text rather than the reply's own status claim, and an item inside one is exempt:
 
@@ -46,7 +52,9 @@ A bare key or a key in ordinary prose is always a claim.
 A lookup is recognized by what it is, never by what it printed, so reading a ledger, backlog, or status file that happens to contain an identifier never counts.
 Recognized lookups are:
 
-- `bin/fm-verify-items.sh`, where every result line except an `unverified` one counts, matched on the exact canonical item: an `error` line means the lookup ran and failed, while `unverified` means no backend could look at all.
+- `bin/fm-verify-items.sh`, where every looked-up item except an `unverified` one counts: an `error` line means the lookup ran and failed, while `unverified` means no backend could look at all.
+  The verifier also records each lookup in a small ledger in the home's state directory, and the hook credits ledger records made during that call, so a run whose output was piped through `awk`, `head`, or `/dev/null` still counts.
+  The window comes from the call's and its result's transcript timestamps, so a ledger record never counts for a call made in another turn.
 - `gh` or `gh-axi` `pr view`, `pr checks`, `pr status`, `pr list`, `issue view`, or a read-only `gh api` call on a `/pulls/` or `/issues/` path, and GitHub MCP read tools.
 - `glab mr view` for a merge request.
 - `twg jira workitem get`, `query`, or `search`, and the Atlassian MCP `getJiraIssue`, `searchJiraIssuesUsingJql`, and `fetch` tools.
@@ -98,7 +106,7 @@ The transcript grows to hundreds of megabytes over a long session, so the reader
 
 ## Regression coverage
 
-`tests/fm-livecheck-guard.test.sh` covers extraction of every item kind, the fence, quoted-span, wiki-link-text, and technical-token exclusions, bare-reference binding, the turn boundary and the continuation rule pinned against the real supervision guard's banner, the growing tail window with a deliberately non-vacuous fixture, the final-message fallback, every recognized and rejected lookup shape including a failed lookup that still counts, and the hook end to end: silence, the block banner and command, the quoted-title reply and the failed-lookup reply that both end the turn while a bare key still blocks, partial verification, the budget and warned allow, `stop_hook_active`, the transcript fallback, the unreadable-transcript warning, scope and host stand-downs, and the tracked registration.
-`tests/fm-verify-items.test.sh` covers every backend over PATH fakes, the state mappings, bare references, the unverified and error lines, exit status, stdin, `config/livecheck.env`, the per-lookup bound, usage refusals, and that no credential reaches stdout or stderr.
+`tests/fm-livecheck-guard.test.sh` covers extraction of every item kind, the collapse of every spelling of one pull request or issue, a verifier lookup in each spelling verifying every other, the bare-number resolution against the reply and against the turn's lookups, a verifier run piped through `awk` against the real verifier's ledger, the fence, quoted-span, wiki-link-text, and technical-token exclusions, bare-reference binding, the turn boundary and the continuation rule pinned against the real supervision guard's banner, the growing tail window with a deliberately non-vacuous fixture, the final-message fallback, every recognized and rejected lookup shape including a failed lookup that still counts, and the hook end to end: silence, the block banner and command, the quoted-title reply and the failed-lookup reply that both end the turn while a bare key still blocks, partial verification, the budget and warned allow, `stop_hook_active`, the transcript fallback, the unreadable-transcript warning, scope and host stand-downs, and the tracked registration.
+`tests/fm-verify-items.test.sh` covers every backend over PATH fakes, the lookup ledger written whatever consumes stdout and trimmed when oversized, the state mappings, bare references, the unverified and error lines, exit status, stdin, `config/livecheck.env`, the per-lookup bound, usage refusals, and that no credential reaches stdout or stderr.
 `FM_LIVECHECK_LIVE_E2E=1 tests/fm-livecheck-guard-live-e2e.test.sh` is the opt-in guard that proves the payload shape and the block-then-allow cycle against the installed Claude Code and fails naming the harness and version.
 [`verification/supervision.md`](verification/supervision.md#live-status-guard) records the active empirical evidence.
