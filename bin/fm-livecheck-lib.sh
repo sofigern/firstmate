@@ -15,16 +15,26 @@
 #   ref      <owner>/<repo>#<n>  a bare #<n> resolved against the reply's only
 #                                GitHub repository (or the caller's --repo)
 #            #<n>                a bare #<n> with no single repository to bind to
+#                                (an explicit <owner>/<repo>#<n> in the text is accepted
+#                                as written, which is the form the guard banner prints)
 #   jira     <KEY-123>
 #   jenkins  https://<host>[/view/<v>]/job/<a>[/job/<b>...]/<n>  (no trailing /)
 #
 # fm_livecheck_extract_items <text> [default-repo]
 #     Print the canonical item lines <text> names, deduplicated, URLs and keys
-#     in first-mention order with bare refs last. Fenced code blocks
-#     (``` or ~~~) are skipped: a fence is where a reply shows a draft, a
-#     command, or quoted text verbatim, so an item inside one is not the
-#     reply's own status claim. Inline code spans are NOT skipped. Trailing
-#     punctuation and markdown emphasis around a token are ignored. A Jira key
+#     in first-mention order with bare refs last. Three spans are quoted
+#     text rather than the reply's own status claim and are skipped: a fenced
+#     code block (``` or ~~~), where a reply shows a draft, a command, or
+#     quoted text verbatim; a double-quoted span (straight "..." or curly
+#     “...”) that opens and closes on one line, where a reply names a page,
+#     document, or message title; and the text part of a Markdown link
+#     [text](url) whose target is a Confluence or wiki page (a host containing
+#     "confluence" or "wiki", or a path starting /wiki/, /confluence/, or
+#     /display/), where the text is that page's title. The link's target
+#     itself is still read, so a link whose target is a /browse/ URL still
+#     names its key. An unbalanced quote exempts nothing. Inline code spans
+#     are NOT skipped. Trailing punctuation and markdown emphasis around a
+#     token are ignored. A Jira key
 #     is two or more capitals, optional capitals or digits, a dash, and one to
 #     six digits, standing alone or under /browse/ in a URL; well-known
 #     technical tokens of that shape (UTF-8, SHA-256, ISO-8601, CVE-..., ...)
@@ -55,9 +65,12 @@
 #     Print the subset of canonical item lines in <items-file> that a
 #     recognized live lookup among <records-file>'s turn records names. A
 #     lookup is recognized by what it is, not by what it printed:
-#       verifier  a Bash command running fm-verify-items.sh; only its result
-#                 lines whose state is not error/unverified count, matched on
-#                 the exact canonical "<kind>\t<id>\t" prefix
+#       verifier  a Bash command running fm-verify-items.sh; its result lines
+#                 count, matched on the exact canonical "<kind>\t<id>\t"
+#                 prefix, in every state except unverified: an error line
+#                 means the lookup ran and failed (not found, no access, an
+#                 outage), which is a live answer to report, while an
+#                 unverified line means no backend could look at all
 #       github    gh or gh-axi "pr|issue view|checks|status|list", or a
 #                 read-only gh api call on a /pulls/ or /issues/ path (no -X,
 #                 --method, -f, -F, --field, --raw-field, or --input), or a
@@ -66,8 +79,10 @@
 #                 searchJiraIssuesUsingJql, or Atlassian fetch tool
 #       jenkins   a command reading <build>/api/json, or tb-jenkins info|status
 #       gitlab    glab mr view
-#     A record whose result is an error never counts. Within a recognized
-#     record the item must appear in its input or result: the full URL, its
+#     A recognized record counts whatever its result says, including a tool
+#     error or a not-found answer: what matters is that the lookup ran in
+#     this turn, and its result is what the reply then reports. Within a
+#     recognized record the item must appear in its input or result: the full URL, its
 #     repository pull/pulls/issues path with the number, a view/checks/status
 #     command naming the number (and the same --repo when one is given), the
 #     Jira key as a whole word, or the Jenkins build URL (trailing slash
@@ -89,15 +104,52 @@ fm_livecheck_jira_ignored() {  # <prefix>
   return 1
 }
 
-# Print one token per line from the prose outside fenced blocks. Tokens keep
-# the characters a URL, key, or #ref needs and drop everything else.
+# Print one token per line from the prose outside the quoted spans the header
+# lists: fenced blocks, one-line double-quoted spans, and the text of a link
+# to a Confluence or wiki page. Tokens keep the characters a URL, key, or #ref
+# needs and drop everything else. The curly quotes are passed in as bytes
+# because the tokenizer runs under LC_ALL=C.
 fm_livecheck_tokens() {  # <text>
   local LC_ALL=C
   printf '%s\n' "$1" \
-    | awk 'BEGIN { fence = 0 }
-           /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
-           !fence { print }' \
-    | tr -c 'A-Za-z0-9_./:#?=&%+-\n' '\n' \
+    | awk -v lq="$(printf '\342\200\234')" -v rq="$(printf '\342\200\235')" '
+        function drop_spans(s, op, cl,   a, rest, b) {
+          while ((a = index(s, op)) > 0) {
+            rest = substr(s, a + length(op))
+            b = index(rest, cl)
+            if (b == 0) break
+            s = substr(s, 1, a - 1) " " substr(rest, b + length(cl))
+          }
+          return s
+        }
+        function wiki_target(t,   host, path) {
+          sub(/^https?:\/\//, "", t)
+          host = t
+          sub(/\/.*/, "", host)
+          path = substr(t, length(host) + 1)
+          return tolower(host) ~ /confluence|wiki/ || tolower(path) ~ /^\/(wiki|confluence|display)(\/|$)/
+        }
+        BEGIN { fence = 0 }
+        /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
+        fence { next }
+        {
+          line = $0
+          out = ""
+          while (match(line, /\[[^][]*\]\(https?:\/\/[^)[:space:]]*\)/)) {
+            link = substr(line, RSTART, RLENGTH)
+            out = out substr(line, 1, RSTART - 1)
+            line = substr(line, RSTART + RLENGTH)
+            target = link
+            sub(/^\[[^][]*\]\(/, "", target)
+            sub(/\)$/, "", target)
+            out = out (wiki_target(target) ? " " target " " : link)
+          }
+          out = out line
+          out = drop_spans(out, "\"", "\"")
+          out = drop_spans(out, lq, rq)
+          print out
+        }' \
+    | tr -c 'A-Za-z0-9_./:#?=&%+\n-' '\n' \
     | sed -e 's/[.,;:!?]*$//' -e '/^$/d'
 }
 
@@ -111,6 +163,7 @@ fm_livecheck_extract_items() {  # <text> [default-repo]
   local jenkins_pat='^(https?://[A-Za-z0-9.-]+(:[0-9]+)?(/view/[A-Za-z0-9._%-]+)?)((/job/[A-Za-z0-9._%-]+)+)/([1-9][0-9]*)(/.*|#.*|\?.*)?$'
   local jira_pat='^([A-Z]{2,}[A-Z0-9]*)-([0-9]{1,6})$'
   local ref_pat='^#([1-9][0-9]*)$'
+  local repo_ref_pat='^([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})#([1-9][0-9]*)$'
   emit() {  # <kind> <id>
     case "$seen" in *$'\n'"$1	$2"$'\n'*) return 0 ;; esac
     seen+="$1	$2"$'\n'
@@ -162,6 +215,10 @@ fm_livecheck_extract_items() {  # <text> [default-repo]
     esac
     if [[ "$token" =~ $jira_pat ]]; then
       fm_livecheck_jira_ignored "${BASH_REMATCH[1]}" || emit jira "$token"
+      continue
+    fi
+    if [[ "$token" =~ $repo_ref_pat ]]; then
+      emit ref "${BASH_REMATCH[1]}#${BASH_REMATCH[2]}"
       continue
     fi
     if [[ "$token" =~ $ref_pat ]]; then
@@ -315,8 +372,8 @@ FM_LIVECHECK_JQ_VERIFIED='
     elif (.name | test("get_pull_request|get_issue|pull_request_read|issue_read|list_pull_requests")) then ["github"]
     else [] end;
   def hay: (.input + "\n" + .result);
-  def good_verifier_lines:
-    [.result | split("\n")[] | select(test("^(pr|issue|ref|jira|jenkins)\t[^\t]+\t(error|unverified)(\t|$)") | not)];
+  def verifier_lines:
+    [.result | split("\n")[] | select(test("^(pr|issue|ref|jira|jenkins)\t[^\t]+\tunverified(\t|$)") | not)];
   def repo_ok($repo):
     command as $c
     | ($c | capture("(^|[[:space:]])(--repo|-R)[[:space:]=]+(?<r>[^[:space:];&|]+)") | .r // null) as $given
@@ -344,9 +401,9 @@ FM_LIVECHECK_JQ_VERIFIED='
       end;
   def accepts($item):
     kinds_of as $kinds
-    | if ($kinds | length) == 0 or .error then false
+    | if ($kinds | length) == 0 then false
       elif ($kinds | index("verifier")) != null
-           and (good_verifier_lines | any(startswith($item.kind + "\t" + $item.id + "\t"))) then true
+           and (verifier_lines | any(startswith($item.kind + "\t" + $item.id + "\t"))) then true
       elif ($item.kind == "jira" and ($kinds | index("jira")) != null)
            or ($item.kind == "jenkins" and ($kinds | index("jenkins")) != null)
            or (($item.kind == "pr" or $item.kind == "issue" or $item.kind == "ref")

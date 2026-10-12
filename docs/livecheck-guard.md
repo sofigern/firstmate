@@ -24,26 +24,37 @@ If any was not, the turn does not end: the hook names the unverified items and t
 - A Jira key: two or more capitals, optional capitals or digits, a dash, and one to six digits, standing alone or under `/browse/` in a URL.
   Well-known technical tokens of that shape (`UTF-8`, `SHA-256`, `CVE-2024-1234`, `ISO-8601`, `Q3-2026`) are not keys; the library header owns the exclusion list.
 - A Jenkins build URL: a host, optionally a view, one or more `/job/<name>` segments, and a build number.
+- An explicit `<owner>/<repo>#<n>`, taken as written; this is the form the banner's fix command prints for a bound reference.
 - A bare `#<n>`, bound to the reply's only GitHub repository when exactly one appears in the reply, otherwise left bare.
   Section 9 of `AGENTS.md` already requires full URLs, so a bare number is the exception, and the banner says to give the URL or name the repository.
 
-Items inside a fenced code block are exempt.
-A fence is where a reply shows a draft, a command, or quoted text verbatim, so an item there is not the reply's own status claim.
+Three kinds of span are quoted text rather than the reply's own status claim, and an item inside one is exempt:
+
+- A fenced code block, where a reply shows a draft, a command, or quoted text verbatim.
+- A double-quoted span, straight `"..."` or curly `“...”`, that opens and closes on one line, where a reply names a page, document, or message by its title.
+  An unbalanced quote exempts nothing.
+- The bracketed text of a Markdown link whose target is a Confluence or wiki page, where the text is that page's title.
+  A target is a Confluence or wiki page when its host contains `confluence` or `wiki` or its path starts with `/wiki/`, `/confluence/`, or `/display/`.
+  The target itself is still read, so a link to a `/browse/` URL still names its key, and the text of a link to any other target is ordinary prose.
+
+The exemption exists because a Confluence page titled `"TEP-22: Trends Service"` is not a claim about a Jira issue `TEP-22`, and the first version of this hook blocked that reply twice.
 Inline code spans are not exempt, because a key in backticks is still a claim about that key.
+A bare key or a key in ordinary prose is always a claim.
 
 ### What counts as a live check
 
 A lookup is recognized by what it is, never by what it printed, so reading a ledger, backlog, or status file that happens to contain an identifier never counts.
 Recognized lookups are:
 
-- `bin/fm-verify-items.sh`, where only the result lines whose state is not `error` or `unverified` count, matched on the exact canonical item.
+- `bin/fm-verify-items.sh`, where every result line except an `unverified` one counts, matched on the exact canonical item: an `error` line means the lookup ran and failed, while `unverified` means no backend could look at all.
 - `gh` or `gh-axi` `pr view`, `pr checks`, `pr status`, `pr list`, `issue view`, or a read-only `gh api` call on a `/pulls/` or `/issues/` path, and GitHub MCP read tools.
 - `glab mr view` for a merge request.
 - `twg jira workitem get`, `query`, or `search`, and the Atlassian MCP `getJiraIssue`, `searchJiraIssuesUsingJql`, and `fetch` tools.
 - A command reading a build's `/api/json`, or `tb-jenkins info` or `status`.
 
 Within a recognized call the item must appear in its input or its result: the full URL, the repository's `pull`, `pulls`, or `issues` path with the number, a `view`, `checks`, or `status` command naming the number under the same `--repo` when one is given, the Jira key as a whole word, or the Jenkins build URL.
-A call whose result is an error never counts, so an outage does not verify anything; the budget below bounds what happens then.
+A recognized call counts whatever it returned, including a not-found answer, an access error, or an outage: the rule is that firstmate looked live this turn, and the result, including "does not exist", is what the reply then reports.
+Without that, a lookup of an item that is not a work item at all, such as a key that only ever named a document, could never satisfy the hook and only the budget below would end the turn.
 One command that runs several lookups verifies every item it names.
 
 ### Where the turn starts
@@ -87,7 +98,7 @@ The transcript grows to hundreds of megabytes over a long session, so the reader
 
 ## Regression coverage
 
-`tests/fm-livecheck-guard.test.sh` covers extraction of every item kind, the fence and technical-token exclusions, bare-reference binding, the turn boundary and the continuation rule pinned against the real supervision guard's banner, the growing tail window with a deliberately non-vacuous fixture, the final-message fallback, every recognized and rejected lookup shape, and the hook end to end: silence, the block banner and command, partial verification, the budget and warned allow, `stop_hook_active`, the transcript fallback, the unreadable-transcript warning, scope and host stand-downs, and the tracked registration.
+`tests/fm-livecheck-guard.test.sh` covers extraction of every item kind, the fence, quoted-span, wiki-link-text, and technical-token exclusions, bare-reference binding, the turn boundary and the continuation rule pinned against the real supervision guard's banner, the growing tail window with a deliberately non-vacuous fixture, the final-message fallback, every recognized and rejected lookup shape including a failed lookup that still counts, and the hook end to end: silence, the block banner and command, the quoted-title reply and the failed-lookup reply that both end the turn while a bare key still blocks, partial verification, the budget and warned allow, `stop_hook_active`, the transcript fallback, the unreadable-transcript warning, scope and host stand-downs, and the tracked registration.
 `tests/fm-verify-items.test.sh` covers every backend over PATH fakes, the state mappings, bare references, the unverified and error lines, exit status, stdin, `config/livecheck.env`, the per-lookup bound, usage refusals, and that no credential reaches stdout or stderr.
 `FM_LIVECHECK_LIVE_E2E=1 tests/fm-livecheck-guard-live-e2e.test.sh` is the opt-in guard that proves the payload shape and the block-then-allow cycle against the installed Claude Code and fails naming the harness and version.
 [`verification/supervision.md`](verification/supervision.md#live-status-guard) records the active empirical evidence.
