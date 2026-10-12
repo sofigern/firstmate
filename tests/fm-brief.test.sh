@@ -895,6 +895,15 @@ test_ticket_window_contract() {
   assert_grep "you were relaunched" "$brief" "ticket brief must carry the relaunch rule"
   assert_grep "subagents inside this session" "$brief" "ticket brief must fan out with in-session subagents"
   assert_grep "never as a new window, worktree, or firstmate task" "$brief" "ticket brief must forbid new windows"
+  assert_grep "name the model explicitly on every call instead of letting it inherit yours" "$brief" \
+    "ticket brief must make every subagent call name its model"
+  assert_grep "the cheapest tier (haiku) for search, grep, listing, and file-reading sweeps" "$brief" \
+    "ticket brief must put sweeps on the cheapest subagent tier"
+  assert_grep "the middle tier (sonnet) for per-item inventories, classification, and routine implementation" "$brief" \
+    "ticket brief must put inventories and routine implementation on the middle tier"
+  assert_grep "the strongest model only for synthesis, design, or genuinely ambiguous judgment" "$brief" \
+    "ticket brief must reserve the strongest model for judgment"
+  assert_grep "where your harness lets you choose" "$brief" "ticket brief must scope the model tiers to harnesses with a choice"
   assert_grep "Only you append to the status file" "$brief" "ticket brief must keep status and inbox with the lieutenant"
   assert_grep "does not survive a restart of this session" "$brief" "ticket brief must state that subagent results are ephemeral"
   assert_grep "You never address the captain" "$brief" "ticket brief must keep the captain boundary"
