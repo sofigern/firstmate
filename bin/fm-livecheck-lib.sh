@@ -161,6 +161,7 @@ fm_livecheck_extract_items() {  # <text> [default-repo]
   local jenkins_pat='^(https?://[A-Za-z0-9.-]+(:[0-9]+)?(/view/[A-Za-z0-9._%-]+)?)((/job/[A-Za-z0-9._%-]+)+)/([1-9][0-9]*)(/.*|#.*|\?.*)?$'
   local jira_pat='^([A-Z]{2,}[A-Z0-9]*)-([0-9]{1,6})$'
   local ref_pat='^#([1-9][0-9]*)$'
+  local repo_ref_pat='^([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})#([1-9][0-9]*)$'
   emit() {  # <kind> <id>
     case "$seen" in *$'\n'"$1	$2"$'\n'*) return 0 ;; esac
     seen+="$1	$2"$'\n'
@@ -212,6 +213,10 @@ fm_livecheck_extract_items() {  # <text> [default-repo]
     esac
     if [[ "$token" =~ $jira_pat ]]; then
       fm_livecheck_jira_ignored "${BASH_REMATCH[1]}" || emit jira "$token"
+      continue
+    fi
+    if [[ "$token" =~ $repo_ref_pat ]]; then
+      emit ref "${BASH_REMATCH[1]}#${BASH_REMATCH[2]}"
       continue
     fi
     if [[ "$token" =~ $ref_pat ]]; then

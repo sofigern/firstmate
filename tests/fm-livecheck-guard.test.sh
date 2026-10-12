@@ -710,6 +710,31 @@ test_hook_quoted_title_and_failed_lookup_end_the_turn() {
   pass "fm-livecheck-guard: the quoted-title reply and the failed-lookup reply end the turn, a bare unchecked key still blocks"
 }
 
+test_hook_printed_command_is_accepted_by_the_verifier() {
+  local dir msg out status cmd
+  dir=$(make_primary_dir "$TMP_ROOT/hook-roundtrip")
+  mkdir -p "$dir/fakebin"
+  printf '#!/bin/sh\nexit 1\n' > "$dir/fakebin/gh"
+  chmod +x "$dir/fakebin/gh"
+  msg="Captain, https://github.com/a/b/issues/3 fixes #4, https://github.com/a/b/pull/9 merged, $JIRA_KEY done, $JENKINS_URL passed."
+  {
+    t_prompt "ask"
+    t_text "$msg"
+  } > "$dir/t.jsonl"
+  out=$(run_hook "$dir" "$(payload s1 "$dir/t.jsonl" "$msg")"); status=$?
+  expect_code 2 "$status" "unchecked items must block"
+  cmd=$(printf '%s\n' "$out" | sed -n 's/^●    \(.*fm-verify-items\.sh.*\)$/\1/p' | head -1)
+  assert_contains "$cmd" "'a/b#4'" "the banner must print the bound ref form"
+  cmd="$ROOT/bin/fm-verify-items.sh ${cmd#*fm-verify-items.sh }"
+  out=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir" bash -c "$cmd" 2>&1); status=$?
+  [ "$status" -ne 2 ] || fail "the verifier rejected the guard's own command: $out"
+  assert_contains "$out" "ref	a/b#4" "the verifier must look up the owner/repo#N form"
+  assert_contains "$out" "pr	https://github.com/a/b/pull/9" "the verifier must look up the pull request"
+  assert_contains "$out" "jira	$JIRA_KEY" "the verifier must look up the Jira key"
+  assert_contains "$out" "jenkins	$JENKINS_URL" "the verifier must look up the build"
+  pass "fm-livecheck-guard: every form the banner prints is accepted by fm-verify-items.sh"
+}
+
 test_tracked_registration() {
   local entry
   entry=$(jq -r '.hooks.Stop[].hooks[] | select(.command | test("fm-livecheck-guard\\.sh")) | [.command, (.timeout // "none" | tostring)] | @tsv' "$ROOT/.claude/settings.json")
@@ -748,4 +773,5 @@ test_hook_falls_back_to_transcript_final_message
 test_hook_unreadable_transcript_warns_and_allows
 test_hook_stands_down_outside_scope
 test_hook_quoted_title_and_failed_lookup_end_the_turn
+test_hook_printed_command_is_accepted_by_the_verifier
 test_tracked_registration
