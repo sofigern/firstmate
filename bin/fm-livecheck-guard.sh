@@ -190,7 +190,8 @@ rule='━━━━━━━━━━━━━━━━━━━━━━━━�
     printf '●  Bare %snames no repository: give the full https:// URL, or check it with\n' "$BARE_REFS"
     printf '●    %s/bin/fm-verify-items.sh --repo <owner/repo> %s\n' "$FM_ROOT" "$BARE_REFS"
   fi
-  printf '●  Items inside a fenced block are exempt; everything else named in the reply is a status claim.\n'
+  printf '●  A lookup that ran counts even when it answered not-found or failed: report that result.\n'
+  printf '●  Items inside a fenced block, a double-quoted title, or the text of a link to a Confluence or wiki page are exempt; everything else named in the reply is a status claim.\n'
   printf '●  Block %s of %s for this session; after that the reply goes through with a warning to the captain.\n' "$COUNT" "$BLOCK_BUDGET"
   printf '●%s\n' "$rule"
 } >&2

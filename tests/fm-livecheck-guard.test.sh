@@ -169,6 +169,32 @@ test_extract_rejects_malformed_urls() {
   pass "fm_livecheck_extract_items: malformed URLs are not items"
 }
 
+test_extract_skips_quoted_titles_and_wiki_link_text() {
+  local out
+  out=$(fm_livecheck_extract_items "Captain, the 2015 Confluence page \"TEP-22: Trends Service\" describes the design; BST-1 is the ticket.")
+  assert_equals "jira	BST-1" "$out" "a key inside a straight double-quoted title is not a claim; the bare key beside it is"
+  local lq rq
+  lq=$(printf '\342\200\234'); rq=$(printf '\342\200\235')
+  out=$(fm_livecheck_extract_items "The page ${lq}TEP-22: Trends Service${rq} and the PR ${lq}https://github.com/a/b/pull/9${rq} are quoted, BST-2 is not.")
+  assert_equals "jira	BST-2" "$out" "a curly double-quoted span is exempt for every item kind"
+  out=$(fm_livecheck_extract_items "The worker said \"ready\" and https://github.com/a/b/pull/7 is green \"now\".")
+  assert_equals "pr	https://github.com/a/b/pull/7" "$out" "quotes pair left to right, so prose between two quoted words stays a claim"
+  out=$(fm_livecheck_extract_items "He wrote \"TEP-22 is the design and BST-3 the ticket")
+  assert_equals "jira	TEP-22
+jira	BST-3" "$out" "an unbalanced quote exempts nothing"
+  out=$(fm_livecheck_extract_items "See [TEP-22: Trends Service](https://tubularlabs.atlassian.net/wiki/spaces/ENG/pages/123/TEP-22) and [TEP-23 design](https://confluence.example.com/display/ENG/Trends).")
+  [ -z "$out" ] || fail "the text of a link to a Confluence or wiki page must not be a claim: $out"
+  out=$(fm_livecheck_extract_items "See [TEP-22: Trends Service](https://tubularlabs.atlassian.net/browse/TEP-22) and [BST-4 fix](https://github.com/a/b/pull/4) and [TEP-25](https://example.com/pages/1).")
+  assert_equals "jira	TEP-22
+jira	BST-4
+pr	https://github.com/a/b/pull/4
+jira	TEP-25" "$out" "a link to any other target keeps its text as prose and still reads the target"
+  out=$(fm_livecheck_extract_items "TEP-22 and \`TEP-24\` are claims.")
+  assert_equals "jira	TEP-22
+jira	TEP-24" "$out" "a bare key and a key in inline code remain claims"
+  pass "fm_livecheck_extract_items: quoted titles and Confluence or wiki link text are not claims, bare keys are"
+}
+
 # --- TURN --------------------------------------------------------------------
 
 test_turn_records_start_after_newest_prompt() {
@@ -344,11 +370,11 @@ ref	#77"
   assert_equals "pr	$PR_URL" "$out" "a list whose result carries the URL verifies the PR"
   out=$(verified_for "$items" "$(bash_record "cat data/backlog.md" "- $PR_URL open")")
   [ -z "$out" ] || fail "reading a ledger that mentions the URL must not count: $out"
-  out=$(verified_for "$items" "$(bash_record 'gh pr view 25005 --repo tubular/tbcode' 'could not resolve' true)")
-  [ -z "$out" ] || fail "an errored lookup must not count: $out"
+  out=$(verified_for "$items" "$(bash_record 'gh pr view 25005 --repo tubular/tbcode' 'could not resolve to a PullRequest' true)")
+  assert_equals "pr	$PR_URL" "$out" "a lookup that ran and failed (not found) still counts: it is a live answer"
   out=$(verified_for "$items" "$(record mcp__github__get_pull_request '{"owner":"tubular","repo":"tbcode","pullNumber":25005}' "{\"html_url\":\"$PR_URL\"}")")
   assert_equals "pr	$PR_URL" "$out" "a GitHub MCP read whose result carries the URL verifies the PR"
-  pass "fm_livecheck_verified: GitHub reads count, writes and ledger reads do not"
+  pass "fm_livecheck_verified: GitHub reads count whatever they answered, writes and ledger reads do not"
 }
 
 test_verified_jira_jenkins_gitlab_lookups() {
@@ -388,8 +414,14 @@ test_verified_helper_lines_and_compound_commands() {
 pr	https://github.com/tubular/tbcode/pull/2500
 jira	$JIRA_KEY"
   out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh $PR_URL $JIRA_KEY" "pr	$PR_URL	merged	merged_at=x
-jira	$JIRA_KEY	error	no backend")")
-  assert_equals "pr	$PR_URL" "$out" "only the helper's non-error lines verify, and only their exact item"
+jira	$JIRA_KEY	error	twg lookup failed (exit 1)" true)")
+  assert_equals "pr	$PR_URL
+jira	$JIRA_KEY" "$out" "a helper line in any real state verifies its exact item, including an error line from a lookup that ran"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh $PR_URL $JIRA_KEY" "pr	$PR_URL	open	x
+jira	$JIRA_KEY	unverified	no Jira backend: install twg" true)")
+  assert_equals "pr	$PR_URL" "$out" "an unverified helper line means no lookup ran, so it never counts"
+  out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh $JIRA_KEY" "fm-verify-items.sh: --repo needs <owner/repo>" true)")
+  [ -z "$out" ] || fail "a helper run that printed no line for the item must not count: $out"
   out=$(verified_for "$items" "$(bash_record "bin/fm-verify-items.sh https://github.com/tubular/tbcode/pull/2500" "pr	https://github.com/tubular/tbcode/pull/2500	open	x")")
   assert_equals "pr	https://github.com/tubular/tbcode/pull/2500" "$out" "a helper line for pull/2500 must not verify pull/25005"
   out=$(verified_for "$items" "$(bash_record "gh pr view 25005 --repo tubular/tbcode; twg jira workitem get $JIRA_KEY" 'x')")
@@ -649,6 +681,35 @@ test_hook_stands_down_outside_scope() {
   pass "fm-livecheck-guard: inert outside a primary home, under Cursor, when opted out, or without jq; refuses other harnesses"
 }
 
+test_hook_quoted_title_and_failed_lookup_end_the_turn() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-tep22")
+  {
+    t_prompt "what did the trends service design say"
+    t_bash q1 "grep -ril trends data/"
+    t_result q1 "data/notes.md"
+    t_text 'Captain, the 2015 Confluence page "TEP-22: Trends Service" describes the design.'
+  } > "$dir/t.jsonl"
+  out=$(run_hook "$dir" "$(payload s1 "$dir/t.jsonl" 'Captain, the 2015 Confluence page "TEP-22: Trends Service" describes the design.')"); status=$?
+  expect_code 0 "$status" "a key that only appears inside a quoted page title must end the turn without a lookup"
+  [ -z "$out" ] || fail "quoted-title reply produced output: $out"
+  out=$(run_hook "$dir" "$(payload s1 "$dir/t.jsonl" 'Captain, TEP-22 describes the design.')"); status=$?
+  expect_code 2 "$status" "the same key bare in prose with no lookup must still block"
+  assert_contains "$out" "jira TEP-22" "banner must name the bare key"
+  assert_contains "$out" "fm-verify-items.sh 'TEP-22'" "banner must give the verifier command"
+  {
+    t_prompt "what did the trends service design say"
+    t_bash q2 "$dir/bin/fm-verify-items.sh 'TEP-22'"
+    t_result q2 "jira	TEP-22	error	twg lookup failed (exit 1)" true
+    t_text 'Captain, "TEP-22: Trends Service" is a 2015 page; there is no Jira issue TEP-22.'
+  } > "$dir/t2.jsonl"
+  out=$(run_hook "$dir" "$(payload s1 "$dir/t2.jsonl" 'Captain, "TEP-22: Trends Service" is a 2015 page; there is no Jira issue TEP-22.')"); status=$?
+  expect_code 0 "$status" "a verifier run that answered error for the key is a live check, so the reply reporting that must end the turn"
+  [ -z "$out" ] || fail "failed-lookup reply produced output: $out"
+  assert_absent "$dir/state/.livecheck-blocks" "the allowed stop must reset the block count"
+  pass "fm-livecheck-guard: the quoted-title reply and the failed-lookup reply end the turn, a bare unchecked key still blocks"
+}
+
 test_tracked_registration() {
   local entry
   entry=$(jq -r '.hooks.Stop[].hooks[] | select(.command | test("fm-livecheck-guard\\.sh")) | [.command, (.timeout // "none" | tostring)] | @tsv' "$ROOT/.claude/settings.json")
@@ -667,6 +728,7 @@ test_extract_names_every_kind_once
 test_extract_skips_fences_and_technical_tokens
 test_extract_binds_bare_refs
 test_extract_rejects_malformed_urls
+test_extract_skips_quoted_titles_and_wiki_link_text
 test_turn_records_start_after_newest_prompt
 test_turn_records_treat_guard_feedback_as_continuation
 test_turn_records_grow_the_tail_window
@@ -685,4 +747,5 @@ test_hook_bare_ref_guidance
 test_hook_falls_back_to_transcript_final_message
 test_hook_unreadable_transcript_warns_and_allows
 test_hook_stands_down_outside_scope
+test_hook_quoted_title_and_failed_lookup_end_the_turn
 test_tracked_registration
