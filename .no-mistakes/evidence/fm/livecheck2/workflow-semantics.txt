@@ -1,0 +1,11 @@
+lint: timeout=nil
+test-coverage: timeout=nil
+tests-portable-parallel-1: timeout=30
+   pi-install: npm install -g @earendil-works/pi-coding-agent@0.87.1
+tests-portable-parallel-2: timeout=30
+tests-portable-serial: timeout=30
+   pi-install: npm install -g @earendil-works/pi-coding-agent@0.87.1
+tests-herdr: timeout=75
+tests-timing-aggregate: timeout=nil
+macos-stock-bash: timeout=10
+invariants: timeout=nil
