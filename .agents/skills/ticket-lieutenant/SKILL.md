@@ -58,6 +58,7 @@ Not a reason: a different kind of request (a Jira comment, a PR, a migration), a
   Relaunch through `stuck-crewmate-recovery` as for any crewmate, then confirm the lieutenant read the ledger before it acts.
 - Fan-out needs an in-session agent tool.
   Claude has one, and the delegation guard leaves it available in a task worktree (`docs/subagent-guard.md`); Codex has none, and the other harnesses are unverified there, so such a lieutenant does the work itself while the one-window rule still holds.
+  The dispatch profile sets only the lieutenant's own model; each subagent's model is the lieutenant's call under the tiering rule the `# Ticket` section owns, so do not restate tiers in a steer.
 - A request that arrives during a validation run and does not touch the branch under validation may proceed at once; one that does queues behind the run, or, when it invalidates the run, follows section 7's supersession sequence.
 
 ## Closing a ticket

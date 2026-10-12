@@ -443,6 +443,7 @@ Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstr
 Malformed JSON, an empty or malformed rule/default array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 Secondmate homes inherit this file from the primary, so a secondmate's own crewmates apply the same dispatch profile behavior.
+A profile chooses the model a crewmate itself runs on; the models a lieutenant's in-session subagents run on are the lieutenant's own choice under the tiering rule owned by the `# Ticket` section that `bin/fm-brief.sh --ticket` generates, so a profile never sets them.
 
 ## Toolchain
 
